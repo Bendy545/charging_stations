@@ -1,0 +1,20 @@
+{
+  "database": {
+    "host": "localhost",
+    "user": "admin",
+    "password": "admin",
+    "database": "charging_station_db"
+  },
+  "files": {
+    "consumption_file": "../data/amadeus/raw/HistoryTable2511260446.csv",
+    "sessions_file": "../data/driivz/raw/ChargeLog Jenišov.csv"
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "cors_origins": [
+      "http://localhost:5173",
+      "http://localhost:3000"
+    ]
+  }
+}
