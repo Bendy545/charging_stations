@@ -1,257 +1,398 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
-import {
-    LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-    Tooltip, Legend, ResponsiveContainer
-} from 'recharts';
-import { stationAPI, lossAPI } from '../services/api';
-import { Station, LossAnalysis, StationStats, ChartDataPoint } from '../types';
-import './StationDetail.css';
+import { useParams, useNavigate } from 'react-router-dom';
+import { api } from '../services/api';
+import type { Station, LossData, SessionData, DateRange, StationStats } from '../types';
+import FilterBar from '../components/filterBar';
+import StatCard from '../components/statCard';
+import EnergyDistributionChart from '../components/charts/energyDistributionChart';
+import LossTrendChart from '../components/charts/lossTrendChart';
+import SessionsChart from '../components/charts/sessionChart';
+import {BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,} from 'recharts';
 
 const StationDetail: React.FC = () => {
     const { stationId } = useParams<{ stationId: string }>();
+    const navigate = useNavigate();
     const [station, setStation] = useState<Station | null>(null);
-    const [lossData, setLossData] = useState<LossAnalysis[]>([]);
-    const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
+    const [lossData, setLossData] = useState<LossData[]>([]);
+    const [sessionsData, setSessionsData] = useState<SessionData[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [dateRange, setDateRange] = useState<DateRange>({ start: '', end: '' });
+    const [activeTab, setActiveTab] = useState('overview');
 
     useEffect(() => {
         if (stationId) {
             fetchStationData();
         }
-    }, [stationId, selectedMonth]);
+    }, [stationId, dateRange]);
 
-    const fetchStationData = async (): Promise<void> => {
-        if (!stationId) return;
-
+    const fetchStationData = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            setError(null);
-
-            const monthDate = new Date(selectedMonth);
-            const startDate = format(startOfMonth(monthDate), 'yyyy-MM-dd');
-            const endDate = format(endOfMonth(monthDate), 'yyyy-MM-dd');
-
-            const [stationRes, lossRes] = await Promise.all([
-                stationAPI.getById(parseInt(stationId)),
-                lossAPI.get({
-                    station_id: parseInt(stationId),
-                    start_date: startDate,
-                    end_date: endDate
-                })
+            const id = parseInt(stationId!);
+            const [stationData, lossData, sessionsData] = await Promise.all([
+                api.getStation(id),
+                api.getLosses(id, dateRange.start, dateRange.end),
+                api.getSessions(id, dateRange.start, dateRange.end),
             ]);
 
-            if (stationRes.success && stationRes.data) {
-                setStation(stationRes.data);
-            }
-
-            if (lossRes.success && lossRes.data) {
-                setLossData(lossRes.data);
-            }
-        } catch (err) {
-            setError('Failed to load station data.');
-            console.error('Error fetching station data:', err);
+            setStation(stationData);
+            setLossData(lossData);
+            setSessionsData(sessionsData);
+        } catch (error) {
+            console.error('Error fetching station data:', error);
         } finally {
             setLoading(false);
         }
     };
 
-    const calculateStats = (): StationStats => {
-        if (lossData.length === 0) {
-            return {
-                totalLoss: '0.00',
-                avgLossPercentage: '0.00',
-                totalConsumption: '0.00',
-                totalDelivered: '0.00',
-                maxLossDay: undefined
-            };
-        }
+    const calculateStats = (): StationStats | null => {
+        if (lossData.length === 0) return null;
 
-        const totalLoss = lossData.reduce((sum, loss) => sum + parseFloat(String(loss.loss_kwh)), 0);
-        const avgLossPercentage = lossData.reduce((sum, loss) => sum + parseFloat(String(loss.loss_percentage)), 0) / lossData.length;
-        const totalConsumption = lossData.reduce((sum, loss) => sum + parseFloat(String(loss.total_consumption_kwh)), 0);
-        const totalDelivered = lossData.reduce((sum, loss) => sum + parseFloat(String(loss.total_delivered_kwh)), 0);
-
-        const maxLossDay = lossData.reduce((max, loss) =>
-                parseFloat(String(loss.loss_kwh)) > parseFloat(String(max.loss_kwh)) ? loss : max
-            , lossData[0]);
+        const totalConsumption = lossData.reduce((sum, item) => sum + parseFloat(item.total_consumption_kwh.toString()), 0);
+        const totalDelivered = lossData.reduce((sum, item) => sum + parseFloat(item.total_delivered_kwh.toString()), 0);
+        const totalLoss = lossData.reduce((sum, item) => sum + parseFloat(item.loss_kwh.toString()), 0);
+        const avgLossPercentage = lossData.reduce((sum, item) => sum + parseFloat(item.loss_percentage.toString()), 0) / lossData.length;
 
         return {
-            totalLoss: totalLoss.toFixed(2),
-            avgLossPercentage: avgLossPercentage.toFixed(2),
             totalConsumption: totalConsumption.toFixed(2),
             totalDelivered: totalDelivered.toFixed(2),
-            maxLossDay
+            totalLoss: totalLoss.toFixed(2),
+            avgLossPercentage: avgLossPercentage.toFixed(2),
+            efficiency: ((totalDelivered / totalConsumption) * 100).toFixed(2),
         };
     };
 
-    const prepareChartData = (): ChartDataPoint[] => {
-        return lossData
-            .sort((a, b) => new Date(a.period_start).getTime() - new Date(b.period_start).getTime())
-            .map(loss => ({
-                date: format(new Date(loss.period_start), 'MM/dd'),
-                consumption: parseFloat(String(loss.total_consumption_kwh)).toFixed(2),
-                delivered: parseFloat(String(loss.total_delivered_kwh)).toFixed(2),
-                loss: parseFloat(String(loss.loss_kwh)).toFixed(2),
-                lossPercentage: parseFloat(String(loss.loss_percentage)).toFixed(2)
-            }));
+    const prepareComparisonChart = () => {
+        return lossData.map((item) => ({
+            date: new Date(item.period_start).toLocaleDateString(),
+            consumption: parseFloat(item.total_consumption_kwh.toString()),
+            delivered: parseFloat(item.total_delivered_kwh.toString()),
+            loss: parseFloat(item.loss_kwh.toString()),
+        }));
     };
 
-    const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-        setSelectedMonth(e.target.value);
-    };
+    const stats = calculateStats();
 
     if (loading) {
-        return <div className="loading">Loading station details...</div>;
-    }
-
-    if (error || !station) {
         return (
-            <div className="error">
-                <h3>Error</h3>
-                <p>{error || 'Station not found'}</p>
-                <Link to="/" className="btn btn-primary">Back to Dashboard</Link>
+            <div className="container-fluid px-4 py-5">
+                <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '60vh' }}>
+                    <div className="text-center">
+                        <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
+                            <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="mt-3 text-muted">Loading station details...</p>
+                    </div>
+                </div>
             </div>
         );
     }
 
-    const stats = calculateStats();
-    const chartData = prepareChartData();
+    if (!station) {
+        return (
+            <div className="container-fluid px-4 py-5">
+                <div className="alert alert-danger">
+                    <i className="bi bi-exclamation-triangle me-2"></i>
+                    Station not found
+                </div>
+                <button className="btn btn-primary" onClick={() => navigate('/')}>
+                    <i className="bi bi-arrow-left me-2"></i>
+                    Back to Dashboard
+                </button>
+            </div>
+        );
+    }
 
     return (
-        <div className="station-detail">
-            <div className="detail-header">
-                <Link to="/" className="back-link">← Back to Dashboard</Link>
-                <div className="header-content">
-                    <h1>{station.station_code}</h1>
-                    <p className="station-name">{station.station_name}</p>
-                    <p className="station-location">📍 {station.location}</p>
-                </div>
+        <div className="container-fluid px-4 py-4">
+            <nav aria-label="breadcrumb" className="mb-3">
+                <ol className="breadcrumb">
+                    <li className="breadcrumb-item">
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/'); }} style={{ cursor: 'pointer' }}>
+                            Dashboard
+                        </a>
+                    </li>
+                    <li className="breadcrumb-item active" aria-current="page">
+                        {station.station_code}
+                    </li>
+                </ol>
+            </nav>
 
-                <div className="month-selector">
-                    <label htmlFor="month">Select Month:</label>
-                    <input
-                        id="month"
-                        type="month"
-                        value={selectedMonth}
-                        onChange={handleMonthChange}
-                        className="month-input"
-                    />
-                </div>
+            <div className="mb-4">
+                <h2 className="mb-1">
+                    <i className="bi bi-ev-station-fill me-2"></i>
+                    {station.station_code} - {station.station_name}
+                </h2>
+                <p className="text-muted">Detailed analysis and statistics</p>
             </div>
 
-            <div className="stats-grid">
-                <div className="stat-card">
-                    <div className="stat-label">Total Consumption</div>
-                    <div className="stat-value">{stats.totalConsumption}</div>
-                    <div className="stat-unit">kWh</div>
-                </div>
+            <FilterBar dateRange={dateRange} onDateRangeChange={setDateRange} />
 
-                <div className="stat-card">
-                    <div className="stat-label">Total Delivered</div>
-                    <div className="stat-value">{stats.totalDelivered}</div>
-                    <div className="stat-unit">kWh</div>
-                </div>
-
-                <div className="stat-card highlight-loss">
-                    <div className="stat-label">Total Loss</div>
-                    <div className="stat-value">{stats.totalLoss}</div>
-                    <div className="stat-unit">kWh</div>
-                </div>
-
-                <div className="stat-card">
-                    <div className="stat-label">Average Loss</div>
-                    <div className="stat-value">{stats.avgLossPercentage}</div>
-                    <div className="stat-unit">%</div>
-                </div>
-            </div>
-
-            {stats.maxLossDay && (
-                <div className="card">
-                    <h3>Highest Loss Day</h3>
-                    <p>
-                        <strong>{format(new Date(stats.maxLossDay.period_start), 'MMMM dd, yyyy')}</strong> -
-                        Loss: {parseFloat(String(stats.maxLossDay.loss_kwh)).toFixed(2)} kWh
-                        ({parseFloat(String(stats.maxLossDay.loss_percentage)).toFixed(2)}%)
-                    </p>
+            {stats && (
+                <div className="row g-4 mb-4">
+                    <div className="col-lg-3 col-md-6">
+                        <StatCard
+                            title="Total Consumption"
+                            value={stats.totalConsumption}
+                            unit="kWh"
+                            icon="bi-activity"
+                            color="primary"
+                        />
+                    </div>
+                    <div className="col-lg-3 col-md-6">
+                        <StatCard
+                            title="Total Delivered"
+                            value={stats.totalDelivered}
+                            unit="kWh"
+                            icon="bi-lightning-charge"
+                            color="success"
+                        />
+                    </div>
+                    <div className="col-lg-3 col-md-6">
+                        <StatCard
+                            title="Total Loss"
+                            value={stats.totalLoss}
+                            unit="kWh"
+                            icon="bi-exclamation-triangle"
+                            color="danger"
+                        />
+                    </div>
+                    <div className="col-lg-3 col-md-6">
+                        <StatCard
+                            title="Average Loss"
+                            value={`${stats.avgLossPercentage}%`}
+                            icon="bi-graph-down"
+                            color="warning"
+                        />
+                    </div>
                 </div>
             )}
 
-            {chartData.length > 0 ? (
-                <>
-                    <div className="card">
-                        <h3 className="card-title">Energy Consumption vs Delivered</h3>
-                        <ResponsiveContainer width="100%" height={400}>
-                            <LineChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" />
-                                <YAxis label={{ value: 'Energy (kWh)', angle: -90, position: 'insideLeft' }} />
-                                <Tooltip />
-                                <Legend />
-                                <Line
-                                    type="monotone"
-                                    dataKey="consumption"
-                                    stroke="#2563eb"
-                                    strokeWidth={2}
-                                    name="Consumption"
-                                    dot={{ r: 4 }}
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="delivered"
-                                    stroke="#10b981"
-                                    strokeWidth={2}
-                                    name="Delivered"
-                                    dot={{ r: 4 }}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
+            <ul className="nav nav-tabs mb-4">
+                <li className="nav-item">
+                    <button
+                        className={`nav-link ${activeTab === 'overview' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('overview')}
+                    >
+                        <i className="bi bi-grid me-2"></i>
+                        Overview
+                    </button>
+                </li>
+                <li className="nav-item">
+                    <button
+                        className={`nav-link ${activeTab === 'analysis' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('analysis')}
+                    >
+                        <i className="bi bi-graph-up me-2"></i>
+                        Loss Analysis
+                    </button>
+                </li>
+                <li className="nav-item">
+                    <button
+                        className={`nav-link ${activeTab === 'sessions' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('sessions')}
+                    >
+                        <i className="bi bi-clock-history me-2"></i>
+                        Sessions
+                    </button>
+                </li>
+                <li className="nav-item">
+                    <button
+                        className={`nav-link ${activeTab === 'details' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('details')}
+                    >
+                        <i className="bi bi-info-circle me-2"></i>
+                        Details
+                    </button>
+                </li>
+            </ul>
+
+            {activeTab === 'overview' && stats && (
+                <div className="row g-4">
+                    <div className="col-lg-6">
+                        <EnergyDistributionChart
+                            delivered={parseFloat(stats.totalDelivered)}
+                            loss={parseFloat(stats.totalLoss)}
+                        />
+                    </div>
+                    <div className="col-lg-6">
+                        <div className="card shadow-sm border-0">
+                            <div className="card-header bg-white">
+                                <h5 className="mb-0">
+                                    <i className="bi bi-bar-chart me-2"></i>
+                                    Energy Comparison
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={prepareComparisonChart()}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Bar dataKey="consumption" fill="#0d6efd" name="Consumption" />
+                                        <Bar dataKey="delivered" fill="#28a745" name="Delivered" />
+                                        <Bar dataKey="loss" fill="#dc3545" name="Loss" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'analysis' && (
+                <div className="row g-4">
+                    <div className="col-12">
+                        <LossTrendChart data={lossData} />
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'sessions' && (
+                <div className="row g-4">
+                    <div className="col-12">
+                        <SessionsChart data={sessionsData} />
+                    </div>
+                    <div className="col-12">
+                        <div className="card shadow-sm border-0">
+                            <div className="card-header bg-white d-flex justify-content-between align-items-center">
+                                <h5 className="mb-0">
+                                    <i className="bi bi-list-ul me-2"></i>
+                                    Recent Sessions
+                                </h5>
+                                <span className="badge bg-primary">{sessionsData.length} sessions</span>
+                            </div>
+                            <div className="card-body">
+                                <div className="table-responsive">
+                                    <table className="table table-hover">
+                                        <thead>
+                                        <tr>
+                                            <th>Start Date</th>
+                                            <th>End Date</th>
+                                            <th>Charger</th>
+                                            <th>Energy (kWh)</th>
+                                            <th>Card</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        {sessionsData.slice(0, 20).map((session, idx) => (
+                                            <tr key={idx}>
+                                                <td>{new Date(session.start_date).toLocaleString()}</td>
+                                                <td>{new Date(session.end_date).toLocaleString()}</td>
+                                                <td>{session.charger_name}</td>
+                                                <td>
+                            <span className="badge bg-success">
+                              {parseFloat(session.total_kwh.toString()).toFixed(2)}
+                            </span>
+                                                </td>
+                                                <td>
+                                                    <small className="text-muted">{session.start_card || 'N/A'}</small>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'details' && stats && (
+                <div className="row g-4">
+                    <div className="col-lg-6">
+                        <div className="card shadow-sm border-0">
+                            <div className="card-header bg-white">
+                                <h5 className="mb-0">
+                                    <i className="bi bi-info-circle me-2"></i>
+                                    Station Information
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <table className="table table-borderless">
+                                    <tbody>
+                                    <tr>
+                                        <td className="fw-semibold">Station Code:</td>
+                                        <td>{station.station_code}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Station Name:</td>
+                                        <td>{station.station_name}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Efficiency:</td>
+                                        <td>
+                                            <span className="badge bg-success">{stats.efficiency}%</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Total Sessions:</td>
+                                        <td>{sessionsData.length}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Days Analyzed:</td>
+                                        <td>{lossData.length}</td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="card">
-                        <h3 className="card-title">Daily Energy Loss</h3>
-                        <ResponsiveContainer width="100%" height={400}>
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" />
-                                <YAxis label={{ value: 'Loss (kWh)', angle: -90, position: 'insideLeft' }} />
-                                <Tooltip />
-                                <Legend />
-                                <Bar
-                                    dataKey="loss"
-                                    fill="#dc2626"
-                                    name="Energy Loss"
-                                />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className="col-lg-6">
+                        <div className="card shadow-sm border-0">
+                            <div className="card-header bg-white">
+                                <h5 className="mb-0">
+                                    <i className="bi bi-calculator me-2"></i>
+                                    Performance Metrics
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <table className="table table-borderless">
+                                    <tbody>
+                                    <tr>
+                                        <td className="fw-semibold">Average Daily Consumption:</td>
+                                        <td>
+                                            {lossData.length > 0
+                                                ? (parseFloat(stats.totalConsumption) / lossData.length).toFixed(2)
+                                                : '0.00'}{' '}
+                                            kWh
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Average Daily Loss:</td>
+                                        <td className="text-danger">
+                                            {lossData.length > 0
+                                                ? (parseFloat(stats.totalLoss) / lossData.length).toFixed(2)
+                                                : '0.00'}{' '}
+                                            kWh
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Average Sessions/Day:</td>
+                                        <td>
+                                            {lossData.length > 0
+                                                ? (sessionsData.length / lossData.length).toFixed(1)
+                                                : '0.0'}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className="fw-semibold">Average Energy/Session:</td>
+                                        <td>
+                                            {sessionsData.length > 0
+                                                ? (parseFloat(stats.totalDelivered) / sessionsData.length).toFixed(2)
+                                                : '0.00'}{' '}
+                                            kWh
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
-
-                    <div className="card">
-                        <h3 className="card-title">Loss Percentage Over Time</h3>
-                        <ResponsiveContainer width="100%" height={400}>
-                            <LineChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" />
-                                <YAxis label={{ value: 'Loss (%)', angle: -90, position: 'insideLeft' }} />
-                                <Tooltip />
-                                <Legend />
-                                <Line
-                                    type="monotone"
-                                    dataKey="lossPercentage"
-                                    stroke="#f59e0b"
-                                    strokeWidth={2}
-                                    name="Loss %"
-                                    dot={{ r: 4 }}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </>
-            ) : (
-                <div className="card">
-                    <p>No data available for the selected month.</p>
                 </div>
             )}
         </div>
