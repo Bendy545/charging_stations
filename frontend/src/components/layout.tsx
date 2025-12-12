@@ -1,36 +1,45 @@
-import React, { ReactNode } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import './Layout.css';
 
 interface LayoutProps {
-    children: ReactNode;
+    children: React.ReactNode;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const location = useLocation();
 
     return (
-        <div className="layout">
-            <header className="header">
-                <div className="header-content">
-                    <Link to="/" className="logo">
-                        ⚡ Charging Station Analysis
+        <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+            <nav className="navbar navbar-dark bg-primary shadow-sm">
+                <div className="container-fluid px-4">
+                    <Link to="/" className="navbar-brand mb-0 h1 text-decoration-none">
+                        <i className="bi bi-lightning-charge-fill me-2"></i>
+                        Charging Station Loss Analysis System
                     </Link>
-                    <nav className="nav">
+                    <div className="d-flex align-items-center">
                         <Link
                             to="/"
-                            className={location.pathname === '/' ? 'nav-link active' : 'nav-link'}
+                            className={`btn ${
+                                location.pathname === '/' ? 'btn-light' : 'btn-outline-light'
+                            } me-2`}
                         >
+                            <i className="bi bi-house-door me-1"></i>
                             Dashboard
                         </Link>
-                    </nav>
+                    </div>
                 </div>
-            </header>
-            <main className="main-content">
-                {children}
-            </main>
-            <footer className="footer">
-                <p>&copy; 2025 Charging Station Loss Analysis</p>
+            </nav>
+
+            <main>{children}</main>
+
+            <footer className="bg-white border-top mt-5 py-3">
+                <div className="container-fluid px-4">
+                    <div className="text-center text-muted small">
+                        <p className="mb-0">
+                            © 2024 Charging Station Loss Analysis System | Built with React + Vite
+                        </p>
+                    </div>
+                </div>
             </footer>
         </div>
     );

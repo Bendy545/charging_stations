@@ -1,8 +1,7 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import StationDetail from './pages/StationDetail';
+import Layout from './components/layout';
+import Dashboard from './pages/dashboard';
+import StationDetail from './pages/stationDetail';
 import './App.css';
 
 function App() {
