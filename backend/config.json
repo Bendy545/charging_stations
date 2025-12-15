@@ -16,5 +16,11 @@
       "http://localhost:5173",
       "http://localhost:3000"
     ]
+  },
+  "jasper_vision": {
+    "base_url": "https://amadeus.jasper.vision/api/public/datapoints",
+    "api_key": "",
+    "domain_id": "",
+    "data_points": {}
   }
 }
