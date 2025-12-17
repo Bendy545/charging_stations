@@ -109,6 +109,67 @@ async def root():
         }
     }
 
+@app.get("/api/data-status")
+async def data_status():
+    """Check what data is available"""
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        # Get consumption date range
+        cursor.execute("""
+            SELECT 
+                MIN(timestamp) as first_consumption,
+                MAX(timestamp) as last_consumption,
+                COUNT(*) as consumption_count
+            FROM power_consumption
+        """)
+        consumption_info = cursor.fetchone()
+
+        # Get sessions date range
+        cursor.execute("""
+            SELECT 
+                MIN(end_date) as first_session,
+                MAX(end_date) as last_session,
+                COUNT(*) as session_count
+            FROM charging_sessions
+        """)
+        session_info = cursor.fetchone()
+
+        # Get loss analysis date range
+        cursor.execute("""
+            SELECT 
+                MIN(period_start) as first_loss,
+                MAX(period_end) as last_loss,
+                COUNT(*) as loss_count
+            FROM loss_analysis
+        """)
+        loss_info = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        return {
+            "success": True,
+            "consumption": {
+                "first_date": consumption_info['first_consumption'].isoformat() if consumption_info['first_consumption'] else None,
+                "last_date": consumption_info['last_consumption'].isoformat() if consumption_info['last_consumption'] else None,
+                "count": consumption_info['consumption_count']
+            },
+            "sessions": {
+                "first_date": session_info['first_session'].isoformat() if session_info['first_session'] else None,
+                "last_date": session_info['last_session'].isoformat() if session_info['last_session'] else None,
+                "count": session_info['session_count']
+            },
+            "losses": {
+                "first_date": loss_info['first_loss'].isoformat() if loss_info['first_loss'] else None,
+                "last_date": loss_info['last_loss'].isoformat() if loss_info['last_loss'] else None,
+                "count": loss_info['loss_count']
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.get("/health")
 async def health_check():
     try:

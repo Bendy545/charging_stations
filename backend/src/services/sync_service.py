@@ -191,3 +191,4 @@ class SyncService:
         finally:
             cursor.close()
             connection.close()
+
