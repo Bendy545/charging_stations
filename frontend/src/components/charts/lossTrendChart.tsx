@@ -7,10 +7,16 @@ interface LossTrendChartProps {
 }
 
 const LossTrendChart: React.FC<LossTrendChartProps> = ({ data }) => {
-    const chartData = data.map((item) => ({
-        date: new Date(item.period_start).toLocaleDateString(),
-        lossPercent: parseFloat(item.loss_percentage.toString()).toFixed(2),
-    }));
+    const chartData = data.map((item) => {
+        const consumption = Number(item.total_consumption_kwh);
+        const loss = Number(item.loss_kwh);
+
+        return {
+            date: new Date(item.period_start).toLocaleDateString(),
+            lossPercent:
+                consumption > 0 ? (loss / consumption) * 100 : 0,
+        };
+    });
 
     return (
         <div className="card shadow-sm border-0">

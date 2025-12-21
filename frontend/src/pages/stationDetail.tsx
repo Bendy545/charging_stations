@@ -48,16 +48,31 @@ const StationDetail: React.FC = () => {
     const calculateStats = (): StationStats | null => {
         if (lossData.length === 0) return null;
 
-        const totalConsumption = lossData.reduce((sum, item) => sum + parseFloat(item.total_consumption_kwh.toString()), 0);
-        const totalDelivered = lossData.reduce((sum, item) => sum + parseFloat(item.total_delivered_kwh.toString()), 0);
-        const totalLoss = lossData.reduce((sum, item) => sum + parseFloat(item.loss_kwh.toString()), 0);
-        const avgLossPercentage = lossData.reduce((sum, item) => sum + parseFloat(item.loss_percentage.toString()), 0) / lossData.length;
+        const totalConsumption = lossData.reduce(
+            (sum, item) => sum + Number(item.total_consumption_kwh),
+            0
+        );
+
+        const totalDelivered = lossData.reduce(
+            (sum, item) => sum + Number(item.total_delivered_kwh),
+            0
+        );
+
+        const totalLoss = lossData.reduce(
+            (sum, item) => sum + Number(item.loss_kwh),
+            0
+        );
+
+        const lossPercentage =
+            totalConsumption > 0
+                ? (totalLoss / totalConsumption) * 100
+                : 0;
 
         return {
             totalConsumption: totalConsumption.toFixed(2),
             totalDelivered: totalDelivered.toFixed(2),
             totalLoss: totalLoss.toFixed(2),
-            avgLossPercentage: avgLossPercentage.toFixed(2),
+            avgLossPercentage: lossPercentage.toFixed(2),
             efficiency: ((totalDelivered / totalConsumption) * 100).toFixed(2),
         };
     };
