@@ -57,71 +57,35 @@ class SyncService:
             cursor.close()
             connection.close()
 
-    async def process_and_insert_data(
-            self, cursor, connection, station_id: int, power_data: Dict[str, List]
-    ) -> int:
-        interval_h = 0.25
-
-        active_power_types = ['active', 'active_master', 'active_slave']
-        reactive_power_types = ['reactive', 'reactive_master', 'reactive_slave']
-
-        timestamps = set()
-        for power_type, values in power_data.items():
-            for item in values:
-                timestamps.add(item['timeStamp'])
-
+    async def process_and_insert_data(self, cursor, connection, station_id: int, power_data: Dict[str, List]) -> int:
+        active_types = ['active', 'active_master', 'active_slave']
         consumption_records = []
 
+        timestamps = set()
+        for p_type in active_types:
+            if p_type in power_data:
+                for item in power_data[p_type]:
+                    timestamps.add(item['timeStamp'])
+
         for ts in sorted(timestamps):
-            try:
-                timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            active_total = 0
 
-                active_total = 0
-                reactive_total = 0
+            for p_type in active_types:
+                if p_type in power_data:
+                    for item in power_data[p_type]:
+                        if item['timeStamp'] == ts:
+                            active_total += abs(float(item['value'])) * 0.25
 
-                for power_type in active_power_types:
-                    if power_type in power_data:
-                        for item in power_data[power_type]:
-                            if item['timeStamp'] == ts:
-                                value = float(item['value'])
-                                active_total += value * interval_h
-
-                for power_type in reactive_power_types:
-                    if power_type in power_data:
-                        for item in power_data[power_type]:
-                            if item['timeStamp'] == ts:
-                                value = float(item['value'])
-                                reactive_total += value * interval_h
-
-                if active_total > 0 or reactive_total > 0:
-                    consumption_records.append((
-                        timestamp,
-                        station_id,
-                        active_total,
-                        reactive_total
-                    ))
-
-            except Exception as e:
-                logger.error(f"Error processing timestamp {ts}: {e}")
-                continue
+            consumption_records.append((dt, station_id, active_total, 0)) # 0 pro jalový
 
         if consumption_records:
-            try:
-                cursor.executemany("""
-                    INSERT INTO power_consumption 
-                    (timestamp, station_id, active_power_kwh, reactive_power_kwh)
-                    VALUES (%s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                    active_power_kwh = VALUES(active_power_kwh),
-                    reactive_power_kwh = VALUES(reactive_power_kwh)
-                """, consumption_records)
-
-                connection.commit()
-
-            except Exception as e:
-                logger.error(f"Error inserting records: {e}")
-                connection.rollback()
-                return 0
+            cursor.executemany("""
+                INSERT INTO power_consumption (timestamp, station_id, active_power_kwh, reactive_power_kwh)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE active_power_kwh = VALUES(active_power_kwh)
+            """, consumption_records)
+            connection.commit()
 
         return len(consumption_records)
 
@@ -188,6 +152,38 @@ class SyncService:
             logger.error(f"Error in initial sync: {e}")
             connection.rollback()
             return 0
+        finally:
+            cursor.close()
+            connection.close()
+
+    async def sync_all_stations_in_range(self, start_time: datetime, end_time: datetime):
+        """
+        Synchronizuje všechna data pro všechny stanice v zadaném časovém rozmezí.
+        Ideální pro historický backfill po malých kouscích.
+        """
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT id, station_code FROM stations")
+            stations = cursor.fetchall()
+
+            total_records = 0
+            for station in stations:
+                logger.info(f"Backfilling {station['station_code']} ({start_time.date()})")
+
+                # Voláme tvůj existující Jasper klients
+                power_data = await self.jasper_client.get_station_power_data(
+                    station['station_code'], start_time, end_time
+                )
+
+                if power_data:
+                    records = await self.process_and_insert_data(
+                        cursor, connection, station['id'], power_data
+                    )
+                    total_records += records
+
+            return total_records
         finally:
             cursor.close()
             connection.close()

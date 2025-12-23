@@ -8,6 +8,7 @@ from backend.src.services.sync_service import SyncService
 from backend.src.services.scheduler import DataScheduler
 import logging
 
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -102,9 +103,7 @@ async def root():
             "sessions": "/api/sessions",
             "losses": "/api/losses",
             "sync_now": "/api/sync-now",
-            "backfill": "/api/backfill",
             "initial_sync": "/api/initial-sync",
-            "health": "/health",
             "docs": "/docs"
         }
     }
@@ -116,7 +115,6 @@ async def data_status():
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
 
-        # Get consumption date range
         cursor.execute("""
             SELECT 
                 MIN(timestamp) as first_consumption,
@@ -126,7 +124,6 @@ async def data_status():
         """)
         consumption_info = cursor.fetchone()
 
-        # Get sessions date range
         cursor.execute("""
             SELECT 
                 MIN(end_date) as first_session,
@@ -136,7 +133,6 @@ async def data_status():
         """)
         session_info = cursor.fetchone()
 
-        # Get loss analysis date range
         cursor.execute("""
             SELECT 
                 MIN(period_start) as first_loss,
@@ -170,35 +166,6 @@ async def data_status():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.get("/health")
-async def health_check():
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
-        cursor.execute("SELECT MAX(timestamp) as last_timestamp FROM power_consumption")
-        result = cursor.fetchone()
-        last_data = result['last_timestamp'] if result else None
-
-        cursor.close()
-        connection.close()
-
-        return {
-            "status": "healthy",
-            "database": "connected",
-            "api_configured": bool(settings.jasper_config.get("api_key")),
-            "scheduler_running": data_scheduler.is_running,
-            "startup_complete": data_scheduler.startup_complete,
-            "last_data_timestamp": last_data.isoformat() if last_data else None,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "database": "disconnected",
-            "error": str(e)
-        }
-
 @app.post("/api/sync-now")
 async def sync_now():
     """
@@ -219,28 +186,6 @@ async def sync_now():
         }
     except Exception as e:
         logger.error(f"Manual sync error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/backfill")
-async def backfill():
-    """
-    Backfill any missing data from last record to now
-    Same as startup backfill, but can be triggered manually
-    """
-    try:
-        logger.info("📞 Manual backfill triggered via API")
-        sync_service = SyncService()
-        records = await sync_service.backfill_missing_data()
-
-        logger.info(f"Backfill completed: {records} records")
-
-        return {
-            "success": True,
-            "message": f"Backfilled {records} missing records",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Backfill error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/initial-sync")
@@ -268,6 +213,7 @@ async def initial_sync(days_back: int = 7):
     except Exception as e:
         logger.error(f"Initial sync error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
