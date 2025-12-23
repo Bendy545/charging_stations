@@ -3,8 +3,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# CONFIGURATION: Data validity dates
 CONSUMPTION_DATA_START = datetime(2025, 3, 16)  # When API data actually starts
-PROBLEMATIC_STATIONS = [9]
+PROBLEMATIC_STATIONS = [1, 2]  # UR371 (incomplete consumption), UR372 (incomplete sessions)
 
 def round_to_15min(dt):
     """Round datetime down to nearest 15-minute interval"""
@@ -20,6 +21,7 @@ def distribute_session_energy(cursor, connection):
     logger.info("STEP 1: Distributing session energy across intervals")
     logger.info("=" * 70)
 
+    # Create the distributed sessions table
     logger.info("Creating distributed_sessions table...")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS distributed_sessions (
@@ -60,7 +62,6 @@ def distribute_session_energy(cursor, connection):
     """, (CONSUMPTION_DATA_START,))
 
     sessions = cursor.fetchall()
-    total_sessions_count = cursor.rowcount
 
     # Get total count before filtering
     cursor.execute("SELECT COUNT(*) as total FROM charging_sessions WHERE total_kwh > 0")
@@ -75,7 +76,6 @@ def distribute_session_energy(cursor, connection):
 
     distributed_records = []
     skipped_count = 0
-    total_energy_check = 0
 
     for idx, session in enumerate(sessions):
         session_id = session['id']
@@ -89,7 +89,6 @@ def distribute_session_energy(cursor, connection):
 
         if total_minutes <= 0:
             skipped_count += 1
-            logger.warning(f"⚠️ Session {session_id}: Invalid duration (start >= end)")
             continue
 
         # Round to 15-min intervals
@@ -98,7 +97,6 @@ def distribute_session_energy(cursor, connection):
 
         # Generate all 15-minute intervals this session touches
         current_interval = first_interval
-        session_distributed_energy = 0
 
         while current_interval <= last_interval:
             interval_end = current_interval + timedelta(minutes=15)
@@ -122,11 +120,7 @@ def distribute_session_energy(cursor, connection):
                     overlap_minutes
                 ))
 
-                session_distributed_energy += energy_in_interval
-
             current_interval = interval_end
-
-        total_energy_check += session_distributed_energy
 
         # Progress logging
         if (idx + 1) % 1000 == 0:
@@ -173,7 +167,7 @@ def distribute_session_energy(cursor, connection):
 def calculate_losses_with_distribution(cursor, connection):
     """
     Calculate losses using properly distributed session energy
-    Handles negative consumption values from problematic stations
+    NOW INCLUDES REACTIVE POWER TRACKING
     """
     logger.info("")
     logger.info("=" * 70)
@@ -191,7 +185,7 @@ def calculate_losses_with_distribution(cursor, connection):
 
     logger.info(f"📊 Using {dist_count} distributed session records")
 
-    # Get date range (only from when consumption data exists)
+    # Get date range
     cursor.execute("""
         SELECT 
             GREATEST(MIN(DATE(interval_15min)), %s) as first_date,
@@ -204,24 +198,30 @@ def calculate_losses_with_distribution(cursor, connection):
     last_date = date_range['last_date']
 
     logger.info(f"📅 Date range: {first_date} to {last_date}")
-    logger.info(f"⚠️ Handling negative consumption from Station {PROBLEMATIC_STATIONS}")
+    logger.info(f"⚠️ Excluding problematic stations: {PROBLEMATIC_STATIONS}")
 
-    # Calculate daily aggregations with special handling for negative values
-    logger.info("🔄 Aggregating daily data...")
+    # Calculate daily aggregations WITH REACTIVE POWER
+    logger.info("🔄 Aggregating daily data (including reactive power)...")
 
-    cursor.execute("""
+    # Build exclusion list for SQL
+    exclusion_list = ','.join(map(str, PROBLEMATIC_STATIONS)) if PROBLEMATIC_STATIONS else '0'
+
+    cursor.execute(f"""
         WITH daily_consumption AS (
             SELECT 
                 station_id,
                 DATE(timestamp) as calc_date,
-                -- Take absolute value of consumption to handle negative readings
+                -- Active power (absolute value to handle negatives)
                 SUM(ABS(active_power_kwh)) as total_consumption,
+                -- Reactive power (absolute value - we just care about magnitude)
+                SUM(ABS(reactive_power_kwh)) as total_reactive,
                 SUM(active_power_kwh) as raw_consumption,
                 COUNT(*) as measurement_count,
                 SUM(CASE WHEN active_power_kwh < 0 THEN 1 ELSE 0 END) as negative_count
             FROM power_consumption
             WHERE DATE(timestamp) >= %s 
             AND DATE(timestamp) <= %s
+            AND station_id NOT IN ({exclusion_list})
             GROUP BY station_id, DATE(timestamp)
         ),
         daily_delivered AS (
@@ -233,6 +233,7 @@ def calculate_losses_with_distribution(cursor, connection):
             FROM distributed_sessions
             WHERE DATE(interval_15min) >= %s 
             AND DATE(interval_15min) <= %s
+            AND station_id NOT IN ({exclusion_list})
             GROUP BY station_id, DATE(interval_15min)
         ),
         combined_data AS (
@@ -240,6 +241,7 @@ def calculate_losses_with_distribution(cursor, connection):
                 COALESCE(c.station_id, d.station_id) as station_id,
                 COALESCE(c.calc_date, d.calc_date) as calc_date,
                 COALESCE(c.total_consumption, 0) as consumption_kwh,
+                COALESCE(c.total_reactive, 0) as reactive_kwh,
                 COALESCE(c.raw_consumption, 0) as raw_consumption_kwh,
                 COALESCE(d.total_delivered, 0) as delivered_kwh,
                 COALESCE(c.measurement_count, 0) as measurements,
@@ -256,6 +258,7 @@ def calculate_losses_with_distribution(cursor, connection):
                 d.station_id,
                 d.calc_date,
                 COALESCE(c.total_consumption, 0) as consumption_kwh,
+                COALESCE(c.total_reactive, 0) as reactive_kwh,
                 COALESCE(c.raw_consumption, 0) as raw_consumption_kwh,
                 d.total_delivered as delivered_kwh,
                 COALESCE(c.measurement_count, 0) as measurements,
@@ -287,21 +290,16 @@ def calculate_losses_with_distribution(cursor, connection):
         'negative_losses': 0,
         'high_losses': 0,
         'normal': 0,
-        'problematic_station': 0
+        'with_reactive': 0
     }
 
     for record in daily_data:
         station_id = record['station_id']
         calc_date = record['calc_date']
         consumption = float(record['consumption_kwh'])
+        reactive = float(record['reactive_kwh'])
         delivered = float(record['delivered_kwh'])
         negative_readings = record['negative_readings']
-
-        # Flag problematic stations
-        if station_id in PROBLEMATIC_STATIONS:
-            stats['problematic_station'] += 1
-            # Skip or handle specially - for now we'll skip
-            continue
 
         # Skip if mostly negative readings
         if negative_readings > record['measurements'] * 0.5:
@@ -316,6 +314,10 @@ def calculate_losses_with_distribution(cursor, connection):
         else:
             loss_percentage = 0 if delivered == 0 else -100
 
+        # Track reactive power presence
+        if reactive > 0:
+            stats['with_reactive'] += 1
+
         # Categorize
         if loss_percentage < -5:
             stats['negative_losses'] += 1
@@ -324,13 +326,14 @@ def calculate_losses_with_distribution(cursor, connection):
         else:
             stats['normal'] += 1
 
-        # Add record
+        # Add record WITH REACTIVE POWER
         loss_records.append((
             station_id,
             calc_date,
             calc_date,
             consumption,
             delivered,
+            reactive,  # NEW: Reactive power
             loss_kwh,
             loss_percentage
         ))
@@ -342,12 +345,13 @@ def calculate_losses_with_distribution(cursor, connection):
         cursor.executemany("""
             INSERT INTO loss_analysis 
             (station_id, period_start, period_end, 
-             total_consumption_kwh, total_delivered_kwh, 
+             total_consumption_kwh, total_delivered_kwh, total_reactive_kwh,
              loss_kwh, loss_percentage)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 total_consumption_kwh = VALUES(total_consumption_kwh),
                 total_delivered_kwh = VALUES(total_delivered_kwh),
+                total_reactive_kwh = VALUES(total_reactive_kwh),
                 loss_kwh = VALUES(loss_kwh),
                 loss_percentage = VALUES(loss_percentage),
                 calculated_at = CURRENT_TIMESTAMP
@@ -356,30 +360,45 @@ def calculate_losses_with_distribution(cursor, connection):
         connection.commit()
 
         # Summary statistics
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT 
                 MIN(loss_percentage) as min_loss,
                 MAX(loss_percentage) as max_loss,
                 AVG(loss_percentage) as avg_loss,
-                STD(loss_percentage) as std_loss
+                STD(loss_percentage) as std_loss,
+                SUM(total_reactive_kwh) as total_reactive,
+                SUM(total_consumption_kwh) as total_active
             FROM loss_analysis
             WHERE period_start >= %s AND period_end <= %s
-            AND station_id NOT IN (%s)
-        """, (first_date, last_date, PROBLEMATIC_STATIONS[0] if PROBLEMATIC_STATIONS else 0))
+            AND station_id NOT IN ({exclusion_list})
+        """, (first_date, last_date))
 
         summary = cursor.fetchone()
+
+        # Calculate power factor
+        total_active = float(summary['total_active'])
+        total_reactive = float(summary['total_reactive'])
+        apparent_power = (total_active**2 + total_reactive**2)**0.5
+        power_factor = (total_active / apparent_power * 100) if apparent_power > 0 else 100
 
         logger.info("=" * 70)
         logger.info("✅ LOSS CALCULATION COMPLETE")
         logger.info(f"   Total records processed: {len(loss_records)}")
-        logger.info(f"   Excluded Station {PROBLEMATIC_STATIONS}: {stats['problematic_station']} records")
+        logger.info(f"   Records with reactive power: {stats['with_reactive']}")
+        logger.info(f"   Excluded Stations {PROBLEMATIC_STATIONS}")
         logger.info(f"   Date range: {first_date} to {last_date}")
         logger.info("")
-        logger.info("📊 Loss Statistics (excluding problematic stations):")
+        logger.info("📊 Loss Statistics:")
         logger.info(f"   Minimum: {summary['min_loss']:.2f}%")
         logger.info(f"   Maximum: {summary['max_loss']:.2f}%")
         logger.info(f"   Average: {summary['avg_loss']:.2f}%")
         logger.info(f"   Std Dev: {summary['std_loss']:.2f}%")
+        logger.info("")
+        logger.info("⚡ Power Quality:")
+        logger.info(f"   Total Active Power: {total_active:,.0f} kWh")
+        logger.info(f"   Total Reactive Power: {total_reactive:,.0f} kVArh")
+        logger.info(f"   Apparent Power: {apparent_power:,.0f} kVAh")
+        logger.info(f"   Average Power Factor: {power_factor:.1f}%")
         logger.info("")
         logger.info("📈 Data Quality:")
         logger.info(f"   Normal (<50%): {stats['normal']} records")
@@ -392,7 +411,7 @@ def calculate_losses_with_distribution(cursor, connection):
 
 def recalculate_everything(cursor, connection):
     """
-    Complete recalculation pipeline with data quality handling
+    Complete recalculation pipeline with reactive power tracking
     """
     logger.info("")
     logger.info("🚀" * 35)
@@ -402,7 +421,7 @@ def recalculate_everything(cursor, connection):
     logger.info(f"⚠️ Data filters active:")
     logger.info(f"   - Only sessions from {CONSUMPTION_DATA_START.date()} onwards")
     logger.info(f"   - Excluding problematic stations: {PROBLEMATIC_STATIONS}")
-    logger.info(f"   - Handling negative consumption readings")
+    logger.info(f"   - Tracking reactive power for power factor analysis")
     logger.info("")
 
     try:
@@ -426,7 +445,7 @@ def recalculate_everything(cursor, connection):
 
 def get_data_quality_report(cursor):
     """
-    Generate a comprehensive data quality report
+    Generate a comprehensive data quality report including power factor
     """
     report = {}
 
@@ -437,7 +456,8 @@ def get_data_quality_report(cursor):
             MAX(timestamp) as last_record,
             COUNT(*) as total_records,
             SUM(CASE WHEN active_power_kwh < 0 THEN 1 ELSE 0 END) as negative_records,
-            SUM(CASE WHEN active_power_kwh < 0 THEN active_power_kwh ELSE 0 END) as negative_sum
+            SUM(active_power_kwh) as total_active,
+            SUM(ABS(reactive_power_kwh)) as total_reactive
         FROM power_consumption
     """)
     report['consumption_coverage'] = cursor.fetchone()
@@ -456,16 +476,38 @@ def get_data_quality_report(cursor):
     report['session_coverage'] = cursor.fetchone()
 
     # Check problematic stations
+    if PROBLEMATIC_STATIONS:
+        placeholders = ','.join(['%s'] * len(PROBLEMATIC_STATIONS))
+        cursor.execute(f"""
+            SELECT 
+                station_id,
+                COUNT(*) as records,
+                SUM(active_power_kwh) as total_kwh,
+                SUM(CASE WHEN active_power_kwh < 0 THEN 1 ELSE 0 END) as negative_count
+            FROM power_consumption
+            WHERE station_id IN ({placeholders})
+            GROUP BY station_id
+        """, PROBLEMATIC_STATIONS)
+        report['problematic_stations'] = cursor.fetchall()
+    else:
+        report['problematic_stations'] = []
+
+    # Power factor by station
     cursor.execute("""
         SELECT 
-            station_id,
-            COUNT(*) as records,
-            SUM(active_power_kwh) as total_kwh,
-            SUM(CASE WHEN active_power_kwh < 0 THEN 1 ELSE 0 END) as negative_count
-        FROM power_consumption
-        WHERE station_id IN (%s)
-        GROUP BY station_id
-    """ % ','.join(map(str, PROBLEMATIC_STATIONS)))
-    report['problematic_stations'] = cursor.fetchall()
+            s.station_code,
+            SUM(la.total_consumption_kwh) as active,
+            SUM(la.total_reactive_kwh) as reactive,
+            SQRT(POW(SUM(la.total_consumption_kwh), 2) + POW(SUM(la.total_reactive_kwh), 2)) as apparent,
+            (SUM(la.total_consumption_kwh) / 
+             NULLIF(SQRT(POW(SUM(la.total_consumption_kwh), 2) + POW(SUM(la.total_reactive_kwh), 2)), 0) * 100
+            ) as power_factor
+        FROM loss_analysis la
+        JOIN stations s ON la.station_id = s.id
+        WHERE la.total_reactive_kwh > 0
+        GROUP BY s.station_code
+        ORDER BY power_factor ASC
+    """)
+    report['power_factor_by_station'] = cursor.fetchall()
 
     return report

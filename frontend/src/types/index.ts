@@ -11,6 +11,7 @@ export interface LossData {
     period_end: string;
     total_consumption_kwh: number;
     total_delivered_kwh: number;
+    total_reactive_kwh: number;
     loss_kwh: number;
     loss_percentage: number;
     station_code?: string;
