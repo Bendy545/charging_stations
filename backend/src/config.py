@@ -14,7 +14,6 @@ class Config:
         self._inject_env_variables()
 
     def _inject_env_variables(self):
-        """Doplní hodnoty z .env souboru do konfigurace"""
 
         if 'jasper_vision' not in self._config:
             self._config['jasper_vision'] = {}
@@ -32,7 +31,6 @@ class Config:
         self._load_data_points_from_env()
 
     def _load_data_points_from_env(self):
-        """Načte GUID datových bodů z proměnných prostředí"""
         if 'data_points' not in self._config['jasper_vision']:
             self._config['jasper_vision']['data_points'] = {}
 
