@@ -207,22 +207,35 @@ def calculate_losses_with_distribution(cursor, connection):
     exclusion_list = ','.join(map(str, PROBLEMATIC_STATIONS)) if PROBLEMATIC_STATIONS else '0'
 
     cursor.execute(f"""
-        WITH daily_consumption AS (
+        WITH charging_intervals AS (
+            -- Zjistíme unikátní dvojice stanice+čas, kdy se reálně nabíjelo
+            SELECT DISTINCT station_id, interval_15min
+            FROM distributed_sessions
+            WHERE energy_kwh > 0
+        ),
+        daily_consumption AS (
             SELECT 
-                station_id,
-                DATE(timestamp) as calc_date,
-                -- Active power (absolute value to handle negatives)
-                SUM(ABS(active_power_kwh)) as total_consumption,
-                -- Reactive power (absolute value - we just care about magnitude)
-                SUM(ABS(reactive_power_kwh)) as total_reactive,
-                SUM(active_power_kwh) as raw_consumption,
+                pc.station_id,
+                DATE(pc.timestamp) as calc_date,
+                SUM(ABS(pc.active_power_kwh)) as total_consumption,
+
+                SUM(CASE 
+                    WHEN ci.interval_15min IS NOT NULL OR pc.active_power_kwh > 0.2 
+                    THEN ABS(pc.reactive_power_kwh) 
+                    ELSE 0 
+                END) as total_reactive,
+                
+                SUM(pc.active_power_kwh) as raw_consumption,
                 COUNT(*) as measurement_count,
-                SUM(CASE WHEN active_power_kwh < 0 THEN 1 ELSE 0 END) as negative_count
-            FROM power_consumption
-            WHERE DATE(timestamp) >= %s 
-            AND DATE(timestamp) <= %s
-            AND station_id NOT IN ({exclusion_list})
-            GROUP BY station_id, DATE(timestamp)
+                SUM(CASE WHEN pc.active_power_kwh < 0 THEN 1 ELSE 0 END) as negative_count
+            FROM power_consumption pc
+            LEFT JOIN charging_intervals ci 
+                ON pc.station_id = ci.station_id 
+                AND pc.timestamp = ci.interval_15min
+            WHERE DATE(pc.timestamp) >= %s 
+            AND DATE(pc.timestamp) <= %s
+            AND pc.station_id NOT IN ({exclusion_list})
+            GROUP BY pc.station_id, DATE(pc.timestamp)
         ),
         daily_delivered AS (
             SELECT 
@@ -326,19 +339,17 @@ def calculate_losses_with_distribution(cursor, connection):
         else:
             stats['normal'] += 1
 
-        # Add record WITH REACTIVE POWER
         loss_records.append((
             station_id,
             calc_date,
             calc_date,
             consumption,
             delivered,
-            reactive,  # NEW: Reactive power
+            reactive,
             loss_kwh,
             loss_percentage
         ))
 
-    # Insert loss records
     if loss_records:
         logger.info("💾 Saving loss analysis records...")
 
@@ -359,7 +370,6 @@ def calculate_losses_with_distribution(cursor, connection):
 
         connection.commit()
 
-        # Summary statistics
         cursor.execute(f"""
             SELECT 
                 MIN(loss_percentage) as min_loss,
@@ -425,10 +435,8 @@ def recalculate_everything(cursor, connection):
     logger.info("")
 
     try:
-        # Step 1: Distribute sessions
         distribute_session_energy(cursor, connection)
 
-        # Step 2: Calculate losses
         calculate_losses_with_distribution(cursor, connection)
 
         logger.info("")
@@ -449,7 +457,6 @@ def get_data_quality_report(cursor):
     """
     report = {}
 
-    # Check consumption data coverage
     cursor.execute("""
         SELECT 
             MIN(timestamp) as first_record,
@@ -462,7 +469,6 @@ def get_data_quality_report(cursor):
     """)
     report['consumption_coverage'] = cursor.fetchone()
 
-    # Check session coverage
     cursor.execute("""
         SELECT 
             MIN(start_date) as first_session,
