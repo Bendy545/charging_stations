@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
-from backend.src.database import get_db_connection
+from backend.src.core.dependencies import get_consumption_repo
+from backend.src.repositories import ConsumptionRepository
 
 router = APIRouter(prefix="/api/consumption", tags=["consumption"])
 
@@ -9,41 +10,18 @@ async def get_consumption(
         station_id: Optional[int] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        limit: int = 1000
+        limit: int = 1000,
+        repo: ConsumptionRepository = Depends(get_consumption_repo)
 ):
-    """Get power consumption data with optional filters"""
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-
-    query = """
-        SELECT pc.*, s.station_code, s.station_name
-        FROM power_consumption pc
-        JOIN stations s ON pc.station_id = s.id
-        WHERE 1=1
-    """
-    params = []
-
-    if station_id:
-        query += " AND pc.station_id = %s"
-        params.append(station_id)
-
-    if start_date:
-        query += " AND pc.timestamp >= %s"
-        params.append(start_date)
-
-    if end_date:
-        query += " AND pc.timestamp <= %s"
-        params.append(end_date)
-
-    query += " ORDER BY pc.timestamp DESC LIMIT %s"
-    params.append(limit)
-
     try:
-        cursor.execute(query, params)
-        consumption = cursor.fetchall()
-        return {"success": True, "data": consumption}
+
+        data = repo.get_all(
+            station_id=station_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit
+        )
+        return {"success": True, "data": data}
+
     except Exception as e:
         return {"success": False, "error": str(e)}
-    finally:
-        cursor.close()
-        connection.close()

@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 # Importuj tvůj upravený SyncService
-from backend.src.services.sync_service import SyncService
+from backend.src.services.sync_service1 import SyncService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BackfillService")

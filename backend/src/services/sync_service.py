@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List
 import logging
 from backend.src.services.jasper_client import JasperClient
-from backend.src.database import get_db_connection
+from backend.src.repositories import StationRepository, ConsumptionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -10,54 +10,40 @@ class SyncService:
     def __init__(self):
         self.jasper_client = JasperClient()
 
-    async def get_last_sync_time(self, cursor, station_id: int) -> datetime:
-        cursor.execute("""
-            SELECT MAX(timestamp) as last_timestamp 
-            FROM power_consumption 
-            WHERE station_id = %s
-        """, (station_id,))
-
-        result = cursor.fetchone()
-        if result and result['last_timestamp']:
-            return result['last_timestamp']
-        else:
-            return datetime.utcnow() - timedelta(hours=24)
-
-    async def sync_station_data(self, station_id: int, station_code: str):
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
+    async def sync_station_data(self, station_id: int, station_code: str) -> int:
+        """Synchronize data for a single station using Repositories"""
         try:
-            last_sync = await self.get_last_sync_time(cursor, station_id)
-            start_time = last_sync
-            end_time = datetime.utcnow()
+            with ConsumptionRepository() as consumption_repo:
+                last_sync = consumption_repo.get_last_timestamp(station_id)
+                if not last_sync:
+                    last_sync = datetime.utcnow() - timedelta(hours=24)
 
-            logger.info(f"Syncing {station_code} from {start_time} to {end_time}")
+                start_time = last_sync
+                end_time = datetime.utcnow()
 
-            power_data = await self.jasper_client.get_station_power_data(
-                station_code, start_time, end_time
-            )
+                logger.info(f"Syncing {station_code} from {start_time} to {end_time}")
 
-            if not power_data:
-                logger.info(f"No data for station {station_code}")
-                return 0
+                power_data = await self.jasper_client.get_station_power_data(
+                    station_code, start_time, end_time
+                )
 
-            records_added = await self.process_and_insert_data(
-                cursor, connection, station_id, power_data
-            )
+                if not power_data:
+                    logger.info(f"No data for station {station_code}")
+                    return 0
 
-            logger.info(f"Synced {records_added} records for {station_code}")
-            return records_added
+                records_added = self._process_and_save(
+                    consumption_repo, station_id, power_data
+                )
+
+                logger.info(f"Synced {records_added} records for {station_code}")
+                return records_added
 
         except Exception as e:
             logger.error(f"Sync error {station_code}: {e}")
-            connection.rollback()
             return 0
-        finally:
-            cursor.close()
-            connection.close()
 
-    async def process_and_insert_data(self, cursor, connection, station_id: int, power_data: Dict[str, List]) -> int:
+    def _process_and_save(self, repo: ConsumptionRepository, station_id: int, power_data: Dict[str, List]) -> int:
+        """Process raw data and save using Repository"""
         active_types = ['active', 'active_master', 'active_slave']
         consumption_records = []
 
@@ -77,114 +63,51 @@ class SyncService:
                         if item['timeStamp'] == ts:
                             active_total += abs(float(item['value'])) * 0.25
 
-            consumption_records.append((dt, station_id, active_total, 0)) # 0 pro jalový
+            consumption_records.append((dt, station_id, active_total, 0))
 
         if consumption_records:
-            cursor.executemany("""
-                INSERT INTO power_consumption (timestamp, station_id, active_power_kwh, reactive_power_kwh)
-                VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE active_power_kwh = VALUES(active_power_kwh)
-            """, consumption_records)
-            connection.commit()
+            return repo.bulk_upsert(consumption_records)
 
-        return len(consumption_records)
+        return 0
 
-    async def sync_all_stations(self):
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
+    async def sync_all_stations(self) -> int:
+        """Sync data for all stations"""
+        total_records = 0
 
-        try:
-            cursor.execute("SELECT id, station_code FROM stations")
-            stations = cursor.fetchall()
+        with StationRepository() as station_repo:
+            stations = station_repo.get_all()
 
-            total_records = 0
+        for station in stations:
+            records = await self.sync_station_data(
+                station.id, station.station_code
+            )
+            total_records += records
 
+        logger.info(f"Total synced records: {total_records}")
+        return total_records
+
+    async def initial_sync(self, days_back: int = 7) -> int:
+        """Perform initial sync for all stations"""
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(days=days_back)
+        total_records = 0
+
+        with StationRepository() as station_repo:
+            stations = station_repo.get_all()
+
+        with ConsumptionRepository() as consumption_repo:
             for station in stations:
-                records = await self.sync_station_data(
-                    station['id'], station['station_code']
-                )
-                total_records += records
-
-            logger.info(f"Total synced records: {total_records}")
-            return total_records
-
-        except Exception as e:
-            logger.error(f"Error syncing all stations: {e}")
-            return 0
-        finally:
-            cursor.close()
-            connection.close()
-
-    async def initial_sync(self, days_back: int = 7):
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
-        try:
-            cursor.execute("SELECT id, station_code FROM stations")
-            stations = cursor.fetchall()
-
-            end_time = datetime.utcnow()
-            start_time = end_time - timedelta(days=days_back)
-
-            total_records = 0
-
-            for station in stations:
-                station_code = station['station_code']
-                station_id = station['id']
-
-                logger.info(f"Initial sync for {station_code}...")
+                logger.info(f"Initial sync for {station.station_code}...")
 
                 power_data = await self.jasper_client.get_station_power_data(
-                    station_code, start_time, end_time
+                    station.station_code, start_time, end_time
                 )
 
                 if power_data:
-                    records = await self.process_and_insert_data(
-                        cursor, connection, station_id, power_data
+                    records = self._process_and_save(
+                        consumption_repo, station.id, power_data
                     )
                     total_records += records
-                    logger.info(f"Loaded {records} historical records for {station_code}")
+                    logger.info(f"Loaded {records} historical records for {station.station_code}")
 
-            logger.info(f"Total historical records loaded: {total_records}")
-            return total_records
-
-        except Exception as e:
-            logger.error(f"Error in initial sync: {e}")
-            connection.rollback()
-            return 0
-        finally:
-            cursor.close()
-            connection.close()
-
-    async def sync_all_stations_in_range(self, start_time: datetime, end_time: datetime):
-        """
-        Synchronizuje všechna data pro všechny stanice v zadaném časovém rozmezí.
-        Ideální pro historický backfill po malých kouscích.
-        """
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
-        try:
-            cursor.execute("SELECT id, station_code FROM stations")
-            stations = cursor.fetchall()
-
-            total_records = 0
-            for station in stations:
-                logger.info(f"Backfilling {station['station_code']} ({start_time.date()})")
-
-                # Voláme tvůj existující Jasper klients
-                power_data = await self.jasper_client.get_station_power_data(
-                    station['station_code'], start_time, end_time
-                )
-
-                if power_data:
-                    records = await self.process_and_insert_data(
-                        cursor, connection, station['id'], power_data
-                    )
-                    total_records += records
-
-            return total_records
-        finally:
-            cursor.close()
-            connection.close()
-
+        return total_records

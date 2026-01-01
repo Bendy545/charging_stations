@@ -1,7 +1,7 @@
 import httpx
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-from backend.src.config import settings
+from backend.src.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)

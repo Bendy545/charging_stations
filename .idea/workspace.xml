@@ -4,11 +4,39 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="Fixed the loss calculation with the eactive piwer and added it into index.ts">
+    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="added power factor calculation and display in the frontend">
+      <change afterPath="$PROJECT_DIR$/backend/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/main.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/core/dependencies.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/models/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/models/consumption.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/models/loss_analysis.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/models/session.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/models/station.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/repositories/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/repositories/base.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/repositories/consumption_repository.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/repositories/loss_repository.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/repositories/session_repository.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/repositories/station_repository.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/routes/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/routes/consumption1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/services/loss_calculator_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/src/services/power_analysis_service.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/services/proper_loss_calculator.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/proper_loss_calculator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/pages/dashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/dashboard.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/pages/stationDetail.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/stationDetail.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/backfill.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/backfill.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/core/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/core/database.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/routes/consumption.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/consumption.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/routes/losses.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/losses.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/routes/sessions.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/sessions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/routes/stations.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/stations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/data_processor.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/data_processor.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/jasper_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/jasper_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/proper_loss_calculator.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/sync_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/sync_service.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -91,10 +119,10 @@
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/backend" />
+      <recent name="$PROJECT_DIR$/backend/src/core" />
       <recent name="$PROJECT_DIR$/frontend/src/components/charts" />
       <recent name="$PROJECT_DIR$/backend/data/amadeus/raw" />
       <recent name="$PROJECT_DIR$/backend/data/driivz/raw" />
-      <recent name="$PROJECT_DIR$/backend/data/driivz" />
     </key>
   </component>
   <component name="RunManager" selected="Python.main">
@@ -135,7 +163,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backend/src/main.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backend/main.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -211,7 +239,11 @@
       <workItem from="1766518649217" duration="2362000" />
       <workItem from="1766922917999" duration="31000" />
       <workItem from="1767009487151" duration="82000" />
-      <workItem from="1767087994168" duration="4591000" />
+      <workItem from="1767087994168" duration="4800000" />
+      <workItem from="1767188355798" duration="3169000" />
+      <workItem from="1767192810680" duration="98000" />
+      <workItem from="1767193130402" duration="213000" />
+      <workItem from="1767291159208" duration="7261000" />
     </task>
     <task id="LOCAL-00001" summary="Changes">
       <option name="closed" value="true" />
@@ -285,7 +317,15 @@
       <option name="project" value="LOCAL" />
       <updated>1766521948366</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="added power factor calculation and display in the frontend">
+      <option name="closed" value="true" />
+      <created>1767093978674</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1767093978674</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -299,11 +339,12 @@
     <MESSAGE value="fixed the loss calculation." />
     <MESSAGE value="Fixed loss calculation" />
     <MESSAGE value="Fixed the loss calculation with the eactive piwer and added it into index.ts" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed the loss calculation with the eactive piwer and added it into index.ts" />
+    <MESSAGE value="added power factor calculation and display in the frontend" />
+    <option name="LAST_COMMIT_MESSAGE" value="added power factor calculation and display in the frontend" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/charging_stations$backfill.coverage" NAME="backfill Coverage Results" MODIFIED="1766488709064" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
-    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1766489498657" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
+    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1767303876166" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$test.coverage" NAME="test Coverage Results" MODIFIED="1765834907267" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
   </component>
 </project>
