@@ -34,10 +34,15 @@ class SessionRepository(BaseRepository):
             query += " AND cs.end_interval_15min <= %s"
             params.append(end_date)
 
+
+
         query += " ORDER BY cs.end_interval_15min DESC LIMIT %s"
         params.append(limit)
 
         rows = self.fetchall(query, tuple(params))
+        print("SQL:", query)
+        print("PARAMS:", params)
+
         return [self._row_to_model(row) for row in rows]
 
     def get_by_id(self, session_id: int) -> Optional[ChargingSession]:
@@ -108,15 +113,3 @@ class SessionRepository(BaseRepository):
             station_code=row.get('station_code'),
             station_name=row.get('station_name')
         )
-
-    def get_data_stats(self) -> dict:
-        """Get aggregate statistics for data availability"""
-        query = """
-            SELECT 
-                MIN(end_date) as first, 
-                MAX(end_date) as last, 
-                COUNT(*) as count 
-            FROM charging_sessions
-        """
-        result = self.fetchone(query)
-        return result if result else {'first': None, 'last': None, 'count': 0}
