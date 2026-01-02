@@ -52,6 +52,64 @@ const Dashboard: React.FC = () => {
         };
     };
 
+    const getStationPowerFactor = (stationId: number) => {
+        const stationLossData = allLossData.filter((item) => item.station_id === stationId);
+        if (stationLossData.length === 0) return null;
+
+        const totalActive = stationLossData.reduce(
+            (sum, item) => sum + parseFloat(item.total_consumption_kwh.toString()),
+            0
+        );
+        const totalReactive = stationLossData.reduce(
+            (sum, item) => sum + parseFloat((item.total_reactive_kwh || 0).toString()),
+            0
+        );
+
+        const apparent = Math.sqrt(totalActive * totalActive + totalReactive * totalReactive);
+        const powerFactor = apparent > 0 ? (totalActive / apparent) * 100 : 100;
+
+        const status = powerFactor >= 95 ? 'excellent' : powerFactor >= 85 ? 'good' : 'poor';
+        const color = powerFactor >= 95 ? 'success' : powerFactor >= 85 ? 'warning' : 'danger';
+
+        return {
+            powerFactor: powerFactor.toFixed(1),
+            totalActive: totalActive.toFixed(0),
+            totalReactive: totalReactive.toFixed(0),
+            apparent: apparent.toFixed(0),
+            status,
+            color
+        };
+    };
+
+    const calculateOverallPowerFactor = () => {
+        if (allLossData.length === 0) return null;
+
+        const totalActive = allLossData.reduce(
+            (sum, item) => sum + parseFloat(item.total_consumption_kwh.toString()),
+            0
+        );
+        const totalReactive = allLossData.reduce(
+            (sum, item) => sum + parseFloat((item.total_reactive_kwh || 0).toString()),
+            0
+        );
+
+        if (totalReactive === 0) return null;
+
+        const apparent = Math.sqrt(totalActive ** 2 + totalReactive ** 2);
+        const powerFactor = (totalActive / apparent) * 100;
+
+        const status = powerFactor >= 95 ? 'excellent' : powerFactor >= 85 ? 'good' : 'poor';
+
+        const color: 'success' | 'warning' | 'danger' =
+            powerFactor >= 95 ? 'success' : powerFactor >= 85 ? 'warning' : 'danger';
+
+        return {
+            powerFactor: powerFactor.toFixed(1),
+            status,
+            color
+        };
+    };
+
     const getStationStats = (stationId: number) => {
         const stationLossData = allLossData.filter((item) => item.station_id === stationId);
 
@@ -102,7 +160,6 @@ const Dashboard: React.FC = () => {
 
     return (
         <div className="container-fluid px-4 py-4">
-            {/* Page Header */}
             <div className="mb-4">
                 <h2 className="mb-1">
                     <i className="bi bi-grid-3x3-gap me-2"></i>
@@ -155,6 +212,19 @@ const Dashboard: React.FC = () => {
                                 color="warning"
                             />
                         </div>
+                        {overallStats && (() => {
+                            const pf = calculateOverallPowerFactor();
+                            return pf ? (
+                                <div className="col-lg-3 col-md-6">
+                                    <StatCard
+                                        title="Power Factor"
+                                        value={`${pf.powerFactor}%`}
+                                        icon="bi-lightning-charge"
+                                        color={pf.color}
+                                    />
+                                </div>
+                            ) : null;
+                        })()}
                     </div>
                 </>
             )}
@@ -213,6 +283,35 @@ const Dashboard: React.FC = () => {
                                                     </div>
                                                 </div>
                                             </div>
+                                            {(() => {
+                                                const pf = getStationPowerFactor(station.id);
+                                                return pf && pf.totalReactive !== '0' ? (
+                                                    <div className="mb-3">
+                                                        <div className={`p-3 rounded border border-${pf.color}`}>
+                                                            <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                <small className="text-muted">
+                                                                    <i className="bi bi-lightning-charge me-1"></i>
+                                                                    Power Factor
+                                                                </small>
+                                                                <span className={`badge bg-${pf.color}`}>
+                                                                    {pf.status === 'excellent' ? 'Excellent' : pf.status === 'good' ? 'Good' : 'Poor'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-center">
+                                                                <span className={`display-6 fw-bold text-${pf.color}`}>
+                                                                    {pf.powerFactor}%
+                                                                </span>
+                                                            </div>
+                                                            <div className="progress mt-2" style={{ height: '8px' }}>
+                                                                <div
+                                                                    className={`progress-bar bg-${pf.color}`}
+                                                                    style={{ width: `${pf.powerFactor}%` }}
+                                                                ></div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : null;
+                                            })()}
                                             <div className="mt-3">
                                                 <div className="progress" style={{ height: '25px' }}>
                                                     <div

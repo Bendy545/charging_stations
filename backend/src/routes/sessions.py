@@ -1,49 +1,22 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
-from backend.src.database import get_db_connection
+from backend.src.core.dependencies import get_session_repo
+from backend.src.repositories import SessionRepository
+from datetime import datetime
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
 
 @router.get("")
 async def get_sessions(
         station_id: Optional[int] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        limit: int = 1000
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        repo: SessionRepository = Depends(get_session_repo)
 ):
-    """Get charging sessions with optional filters"""
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-
-    query = """
-        SELECT cs.*, s.station_code, s.station_name
-        FROM charging_sessions cs
-        JOIN stations s ON cs.station_id = s.id
-        WHERE 1=1
-    """
-    params = []
-
-    if station_id:
-        query += " AND cs.station_id = %s"
-        params.append(station_id)
-
-    if start_date:
-        query += " AND cs.end_interval_15min >= %s"
-        params.append(start_date)
-
-    if end_date:
-        query += " AND cs.end_interval_15min <= %s"
-        params.append(end_date)
-
-    query += " ORDER BY cs.end_interval_15min DESC LIMIT %s"
-    params.append(limit)
-
-    try:
-        cursor.execute(query, params)
-        sessions = cursor.fetchall()
-        return {"success": True, "data": sessions}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    finally:
-        cursor.close()
-        connection.close()
+    sessions = repo.get_all(
+        station_id=station_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+    return {"success": True, "data": [s.to_dict() for s in sessions]}

@@ -1,0 +1,189 @@
+from typing import List, Optional, Dict, Any
+from datetime import date, datetime, timedelta
+from backend.src.repositories.base import BaseRepository
+from backend.src.models.loss_analysis import LossAnalysis
+import logging
+
+logger = logging.getLogger(__name__)
+
+class LossRepository(BaseRepository):
+    """Repository for loss analysis and complex energy distribution calculations"""
+
+    CONSUMPTION_DATA_START = datetime(2025, 3, 16)
+    PROBLEMATIC_STATIONS = [1, 2]
+
+    def _round_to_15min(self, dt: datetime) -> datetime:
+        return dt.replace(minute=(dt.minute // 15) * 15, second=0, microsecond=0)
+
+    def ensure_tables_exist(self):
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS distributed_sessions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                session_id INT NOT NULL,
+                station_id INT NOT NULL,
+                interval_15min DATETIME NOT NULL,
+                energy_kwh DECIMAL(10, 3) NOT NULL,
+                proportion DECIMAL(5, 4) NOT NULL,
+                overlap_minutes DECIMAL(6, 2) NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES charging_sessions(id),
+                FOREIGN KEY (station_id) REFERENCES stations(id),
+                UNIQUE KEY unique_session_interval (session_id, interval_15min),
+                INDEX idx_interval (interval_15min),
+                INDEX idx_station_interval (station_id, interval_15min)
+            )
+        """)
+
+    def run_energy_distribution(self):
+        self.execute("DELETE FROM distributed_sessions")
+
+        query = """
+            SELECT id, station_id, start_date, end_date, total_kwh
+            FROM charging_sessions
+            WHERE total_kwh > 0
+            AND start_date IS NOT NULL
+            AND end_date IS NOT NULL
+            AND end_date >= %s
+        """
+        sessions = self.fetchall(query, (self.CONSUMPTION_DATA_START,))
+
+        distributed_records = []
+        for session in sessions:
+            start = session['start_date']
+            end = session['end_date']
+            total_kwh = float(session['total_kwh'])
+            total_minutes = (end - start).total_seconds() / 60
+
+            if total_minutes <= 0: continue
+
+            current_interval = self._round_to_15min(start)
+            last_interval = self._round_to_15min(end)
+
+            while current_interval <= last_interval:
+                interval_end = current_interval + timedelta(minutes=15)
+                overlap_start = max(start, current_interval)
+                overlap_end = min(end, interval_end)
+                overlap_minutes = (overlap_end - overlap_start).total_seconds() / 60
+
+                if overlap_minutes > 0:
+                    proportion = overlap_minutes / total_minutes
+                    distributed_records.append((
+                        session['id'], session['station_id'], current_interval,
+                        total_kwh * proportion, proportion, overlap_minutes
+                    ))
+                current_interval = interval_end
+
+        if distributed_records:
+            insert_query = """
+                INSERT INTO distributed_sessions 
+                (session_id, station_id, interval_15min, energy_kwh, proportion, overlap_minutes)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            self.bulk_insert(insert_query, distributed_records)
+            return len(distributed_records)
+        return 0
+
+    def calculate_losses_with_distribution(self):
+        exclusion_list = ','.join(map(str, self.PROBLEMATIC_STATIONS)) if self.PROBLEMATIC_STATIONS else '0'
+
+        query = f"""
+            INSERT INTO loss_analysis 
+            (station_id, period_start, period_end, 
+             total_consumption_kwh, total_delivered_kwh, total_reactive_kwh,
+             loss_kwh, loss_percentage)
+            WITH daily_consumption AS (
+                SELECT station_id, DATE(timestamp) as calc_date,
+                       SUM(ABS(active_power_kwh)) as total_cons,
+                       SUM(ABS(reactive_power_kwh)) as total_react,
+                       COUNT(*) as m_count,
+                       SUM(CASE WHEN active_power_kwh < 0 THEN 1 ELSE 0 END) as neg_count
+                FROM power_consumption
+                WHERE DATE(timestamp) >= %s AND station_id NOT IN ({exclusion_list})
+                GROUP BY station_id, DATE(timestamp)
+            ),
+            daily_delivered AS (
+                SELECT station_id, DATE(interval_15min) as calc_date,
+                       SUM(energy_kwh) as total_deliv
+                FROM distributed_sessions
+                WHERE station_id NOT IN ({exclusion_list})
+                GROUP BY station_id, DATE(interval_15min)
+            )
+            SELECT 
+                c.station_id, c.calc_date, c.calc_date,
+                c.total_cons, COALESCE(d.total_deliv, 0), c.total_react,
+                (c.total_cons - COALESCE(d.total_deliv, 0)) as loss_kwh,
+                ((c.total_cons - COALESCE(d.total_deliv, 0)) / NULLIF(c.total_cons, 0)) * 100
+            FROM daily_consumption c
+            LEFT JOIN daily_delivered d ON c.station_id = d.station_id AND c.calc_date = d.calc_date
+            ON DUPLICATE KEY UPDATE
+                total_consumption_kwh = VALUES(total_consumption_kwh),
+                total_delivered_kwh = VALUES(total_delivered_kwh),
+                total_reactive_kwh = VALUES(total_reactive_kwh),
+                loss_kwh = VALUES(loss_kwh),
+                loss_percentage = VALUES(loss_percentage)
+        """
+        self.execute(query, (self.CONSUMPTION_DATA_START.date(),))
+
+    def get_statistics(self, station_id: Optional[int] = None) -> Dict[str, Any]:
+        query = """
+            SELECT 
+                COUNT(*) as total_records,
+                MIN(period_start) as first_date,
+                MAX(period_end) as last_date,
+                AVG(loss_percentage) as avg_loss_pct,
+                MIN(loss_percentage) as min_loss_pct,
+                MAX(loss_percentage) as max_loss_pct,
+                SUM(total_consumption_kwh) as total_consumption,
+                SUM(total_delivered_kwh) as total_delivered,
+                SUM(total_reactive_kwh) as total_reactive
+            FROM loss_analysis
+        """
+        if station_id:
+            query += " WHERE station_id = %s"
+            res = self.fetchone(query, (station_id,))
+        else:
+            res = self.fetchone(query)
+
+        return res if res else {}
+
+    def get_all(self, station_id=None, start_date=None, end_date=None) -> List[LossAnalysis]:
+        query = "SELECT la.*, s.station_code FROM loss_analysis la JOIN stations s ON la.station_id = s.id WHERE 1=1"
+        params = []
+        if station_id:
+            query += " AND la.station_id = %s"; params.append(station_id)
+        if start_date:
+            query += " AND la.period_start >= %s"; params.append(start_date)
+        query += " ORDER BY la.period_start DESC"
+        rows = self.fetchall(query, tuple(params) if params else None)
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: dict) -> LossAnalysis:
+        return LossAnalysis(
+            id=row['id'], station_id=row['station_id'],
+            period_start=row['period_start'], period_end=row['period_end'],
+            total_consumption_kwh=float(row['total_consumption_kwh']),
+            total_delivered_kwh=float(row['total_delivered_kwh']),
+            total_reactive_kwh=float(row.get('total_reactive_kwh', 0)),
+            loss_kwh=float(row['loss_kwh']),
+            loss_percentage=float(row['loss_percentage'])
+        )
+
+    def get_power_factor_by_station(self) -> list:
+        query = """
+            SELECT 
+                s.station_code,
+                s.station_name,
+                SUM(la.total_consumption_kwh) as total_active,
+                SUM(la.total_reactive_kwh) as total_reactive,
+                SQRT(POW(SUM(la.total_consumption_kwh), 2) + 
+                     POW(SUM(la.total_reactive_kwh), 2)) as apparent_power,
+                (SUM(la.total_consumption_kwh) / 
+                 NULLIF(SQRT(POW(SUM(la.total_consumption_kwh), 2) + 
+                            POW(SUM(la.total_reactive_kwh), 2)), 0) * 100
+                ) as power_factor
+            FROM loss_analysis la
+            JOIN stations s ON la.station_id = s.id
+            WHERE la.total_reactive_kwh > 0
+            GROUP BY s.station_code, s.station_name
+            ORDER BY power_factor ASC
+        """
+        return self.fetchall(query)

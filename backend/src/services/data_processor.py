@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-from backend.src.database import get_db_connection
+from backend.src.core.database import get_db_connection
 
 logger = logging.getLogger(__name__)
 
