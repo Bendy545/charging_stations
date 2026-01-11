@@ -14,17 +14,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="container-fluid px-4">
                     <Link to="/" className="navbar-brand mb-0 h1 text-decoration-none">
                         <i className="bi bi-lightning-charge-fill me-2"></i>
-                        Charging Station Loss Analysis System
+                        Charging Station Analysis
                     </Link>
-                    <div className="d-flex align-items-center">
+                    <div className="d-flex align-items-center gap-2">
                         <Link
                             to="/"
                             className={`btn ${
                                 location.pathname === '/' ? 'btn-light' : 'btn-outline-light'
-                            } me-2`}
+                            }`}
                         >
                             <i className="bi bi-house-door me-1"></i>
                             Dashboard
+                        </Link>
+                        <Link
+                            to="/predictions"
+                            className={`btn ${
+                                location.pathname === '/predictions' ? 'btn-light' : 'btn-outline-light'
+                            }`}
+                        >
+                            <i className="bi bi-graph-up-arrow me-1"></i>
+                            Predictions
+                            <span className="badge bg-success ms-2">ML</span>
                         </Link>
                     </div>
                 </div>
@@ -36,7 +46,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="container-fluid px-4">
                     <div className="text-center text-muted small">
                         <p className="mb-0">
-                            © 2024 Charging Station Loss Analysis System | Built with React + Vite
+                            © 2026 Charging Station Loss Analysis System |
+                            <span className="text-success ms-2">
+                                <i className="bi bi-robot me-1"></i>
+                                ML-Powered Predictions
+                            </span>
                         </p>
                     </div>
                 </div>

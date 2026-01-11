@@ -6,6 +6,7 @@ from backend.src.repositories import StationRepository, ConsumptionRepository, S
 from backend.src.routes import stations, consumption, sessions, losses
 from backend.src.services.sync_service import SyncService
 from backend.src.services.scheduler import DataScheduler
+from backend.src.routes import predictions
 import logging
 
 logging.basicConfig(
@@ -34,6 +35,7 @@ app.include_router(stations.router)
 app.include_router(consumption.router)
 app.include_router(sessions.router)
 app.include_router(losses.router)
+app.include_router(predictions.router)
 
 @app.on_event("startup")
 async def startup_event():
