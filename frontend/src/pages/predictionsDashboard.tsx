@@ -6,6 +6,8 @@ import { api } from '../services/api';
 import type { Station } from '../types';
 
 const PredictionsDashboard: React.FC = () => {
+    const PROBLEMATIC_STATIONS = [1, 2];
+
     const [stations, setStations] = useState<Station[]>([]);
     const [predictions, setPredictions] = useState<Map<number, DailyPrediction[]>>(new Map());
     const [modelInfo, setModelInfo] = useState<TrainingResults | null>(null);
@@ -20,16 +22,17 @@ const PredictionsDashboard: React.FC = () => {
     const loadInitialData = async () => {
         setLoading(true);
         try {
-            // Load stations
             const stationsData = await api.getStations();
-            setStations(stationsData);
 
-            // Load predictions for all stations
-            const stationIds = stationsData.map(s => s.id);
+            const validStations = stationsData.filter(
+                s => !PROBLEMATIC_STATIONS.includes(s.id)
+            );
+            setStations(validStations);
+
+            const stationIds = validStations.map(s => s.id);
             const predictionsData = await predictionsApi.getAllStationsPredictions(stationIds, selectedDays);
             setPredictions(predictionsData);
 
-            // Load model info
             try {
                 const info = await predictionsApi.getModelInfo();
                 console.log('Model info:', info);
@@ -50,7 +53,6 @@ const PredictionsDashboard: React.FC = () => {
             setModelInfo(results);
             alert(`Model trained successfully!\nR² Score: ${results.test_r2}\nMAE: ${results.test_mae_kwh} kWh\nQuality: ${results.quality_rating}`);
 
-            // Reload predictions
             await loadInitialData();
         } catch (error) {
             console.error('Training error:', error);
@@ -60,7 +62,6 @@ const PredictionsDashboard: React.FC = () => {
         }
     };
 
-    // Calculate overall predictions (sum across all stations)
     const calculateOverallPredictions = (): DailyPrediction[] => {
         if (predictions.size === 0) return [];
 
@@ -98,7 +99,6 @@ const PredictionsDashboard: React.FC = () => {
 
     return (
         <div className="container-fluid px-4 py-4">
-            {/* Header */}
             <div className="mb-4">
                 <div className="d-flex justify-content-between align-items-center">
                     <div>
@@ -130,7 +130,6 @@ const PredictionsDashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* Model Info Card */}
             {modelInfo && (
                 <div className="card shadow-sm mb-4 border-success">
                     <div className="card-body">
@@ -152,11 +151,18 @@ const PredictionsDashboard: React.FC = () => {
                                 <h4 className="mb-0">{modelInfo.data_summary.total_hours.toLocaleString()} hours</h4>
                             </div>
                         </div>
+                        {PROBLEMATIC_STATIONS.length > 0 && (
+                            <div className="alert alert-info mt-3 mb-0">
+                                <i className="bi bi-info-circle me-2"></i>
+                                <small>
+                                    <strong>Note:</strong> Stations {PROBLEMATIC_STATIONS.join(', ')} are excluded from predictions due to data quality issues.
+                                </small>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
 
-            {/* Days selector */}
             <div className="card shadow-sm mb-4">
                 <div className="card-body">
                     <label className="form-label fw-semibold">Forecast Period</label>
@@ -174,7 +180,6 @@ const PredictionsDashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* Overall Predictions Chart */}
             <div className="card shadow-sm mb-4">
                 <div className="card-header bg-white">
                     <h5 className="mb-0">
@@ -200,7 +205,6 @@ const PredictionsDashboard: React.FC = () => {
                         </BarChart>
                     </ResponsiveContainer>
 
-                    {/* Summary Stats */}
                     <div className="row mt-3">
                         <div className="col-md-4">
                             <div className="text-center p-2 bg-light rounded">
@@ -230,7 +234,6 @@ const PredictionsDashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* Individual Station Predictions */}
             <h4 className="mb-3">
                 <i className="bi bi-ev-station me-2"></i>
                 Individual Station Forecasts
@@ -295,7 +298,6 @@ const PredictionsDashboard: React.FC = () => {
                                         </LineChart>
                                     </ResponsiveContainer>
 
-                                    {/* Next 3 days detail */}
                                     <div className="mt-3">
                                         <small className="text-muted fw-semibold">Next 3 Days:</small>
                                         <div className="list-group list-group-flush mt-2">

@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="First version of prediction model">
+    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="Second and functional version of prediciton model.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/prediction_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/prediction_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/pages/predictionsDashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/predictionsDashboard.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -15,10 +17,10 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="TypeScript File" />
         <option value="CSS File" />
-        <option value="TypeScript JSX File" />
         <option value="Python Script" />
+        <option value="TypeScript File" />
+        <option value="TypeScript JSX File" />
       </list>
     </option>
   </component>
@@ -69,6 +71,7 @@
     &quot;Python.main.executor&quot;: &quot;Run&quot;,
     &quot;Python.prediction_service.executor&quot;: &quot;Run&quot;,
     &quot;Python.test.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test_predict.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;dev&quot;,
@@ -189,7 +192,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="test" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="test_predict" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="charging_stations" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -198,12 +201,12 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/backend/src" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/backend" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backend/src/test.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backend/test_predict.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -215,10 +218,10 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.main" />
-        <item itemvalue="Python.diagnostic" />
         <item itemvalue="Python.prediction_service" />
+        <item itemvalue="Python.test_predict" />
+        <item itemvalue="Python.diagnostic" />
         <item itemvalue="Python.backfill" />
-        <item itemvalue="Python.test" />
       </list>
     </recent_temporary>
   </component>
@@ -267,6 +270,8 @@
       <workItem from="1767464501243" duration="519000" />
       <workItem from="1767730795334" duration="3703000" />
       <workItem from="1767880773769" duration="176000" />
+      <workItem from="1768122755271" duration="4422000" />
+      <workItem from="1768322744791" duration="4546000" />
     </task>
     <task id="LOCAL-00001" summary="Changes">
       <option name="closed" value="true" />
@@ -372,7 +377,15 @@
       <option name="project" value="LOCAL" />
       <updated>1767735868175</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="Second and functional version of prediciton model.">
+      <option name="closed" value="true" />
+      <created>1768131092384</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1768131092384</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -390,12 +403,14 @@
     <MESSAGE value="changed the whole structure of the backend" />
     <MESSAGE value="fixed backend returning number of sesions for each of the stations" />
     <MESSAGE value="First version of prediction model" />
-    <option name="LAST_COMMIT_MESSAGE" value="First version of prediction model" />
+    <MESSAGE value="Second and functional version of prediciton model." />
+    <option name="LAST_COMMIT_MESSAGE" value="Second and functional version of prediciton model." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/charging_stations$prediction_service.coverage" NAME="prediction_service Coverage Results" MODIFIED="1767734771894" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
+    <SUITE FILE_PATH="coverage/charging_stations$prediction_service.coverage" NAME="prediction_service Coverage Results" MODIFIED="1768329115575" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
+    <SUITE FILE_PATH="coverage/charging_stations$test_predict.coverage" NAME="test_predict Coverage Results" MODIFIED="1768124683687" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend" />
     <SUITE FILE_PATH="coverage/charging_stations$backfill.coverage" NAME="backfill Coverage Results" MODIFIED="1766488709064" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
-    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1767880834872" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
+    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1768327510194" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$test.coverage" NAME="test Coverage Results" MODIFIED="1765834907267" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$diagnostic.coverage" NAME="diagnostic Coverage Results" MODIFIED="1767734849528" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
   </component>
