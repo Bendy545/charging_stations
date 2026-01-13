@@ -308,7 +308,7 @@ const PredictionsDashboard: React.FC = () => {
                                                         {new Date(pred.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                                     </span>
                                                     <span className="badge bg-primary rounded-pill">
-                                                        {pred.predicted_daily_loss_kwh.toFixed(2)} kWh
+                                                        {(pred.predicted_daily_loss_kwh || 0).toFixed(2)} kWh
                                                     </span>
                                                 </div>
                                             ))}

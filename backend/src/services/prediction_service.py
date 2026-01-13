@@ -17,6 +17,7 @@ import logging
 import pickle
 import os
 
+from backend.src.repositories.prediction_repository import PredictionRepository
 from backend.src.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class HourlyPredictionService:
 
     def __init__(self):
         self.model = None
+        self.repo = PredictionRepository()
         self.model_path = "models/hourly_loss_model.pkl"
         self.scaler_path = "models/feature_scaler.pkl"
 
@@ -369,6 +371,17 @@ class HourlyPredictionService:
             'max_depth': self.model.max_depth,
             'n_features': self.model.n_features_in_
         }
+
+    def refresh_cache_for_stations(self, station_ids: List[int]):
+        for s_id in station_ids:
+            daily_preds = self.predict_daily_summary(station_id=s_id, days_ahead=14)
+
+            with self.repo as repo:
+                repo.save_predictions(s_id, daily_preds)
+
+    def get_forecast_from_cache(self, station_id: int, days: int):
+        with self.repo as repo:
+            return repo.get_cached_predictions(station_id, days)
 
 if __name__ == "__main__":
     """
