@@ -20,18 +20,15 @@ async def get_losses(
 ):
     """Get loss analysis data using service layer"""
     try:
-        # Convert string dates to date objects if provided
         start = date.fromisoformat(start_date) if start_date else None
         end = date.fromisoformat(end_date) if end_date else None
 
-        # Use service to get losses
         losses = loss_service.get_losses(
             station_id=station_id,
             start_date=start,
             end_date=end
         )
 
-        # Convert to dict for JSON response
         return {
             "success": True,
             "data": [loss.to_dict() for loss in losses]

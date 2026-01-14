@@ -2,8 +2,13 @@ from backend.src.repositories import (
     StationRepository,
     LossRepository,
     SessionRepository,
-    ConsumptionRepository
+    ConsumptionRepository,
+    PredictionRepository
 )
+
+def get_prediction_repo():
+    with PredictionRepository() as repo:
+        yield repo
 
 def get_station_repo():
     with StationRepository() as repo:

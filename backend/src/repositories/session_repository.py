@@ -2,6 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 from backend.src.repositories.base import BaseRepository
 from backend.src.models.session import ChargingSession
+import pandas as pd
 
 class SessionRepository(BaseRepository):
     """Repository for charging session data access"""
@@ -113,3 +114,12 @@ class SessionRepository(BaseRepository):
             station_code=row.get('station_code'),
             station_name=row.get('station_name')
         )
+
+    def get_distributed_sessions(self, exclude_ids: List[int], station_id: Optional[int] = None) -> List[dict]:
+        query = f"SELECT interval_15min as timestamp, station_id, energy_kwh FROM distributed_sessions WHERE station_id NOT IN ({','.join(['%s']*len(exclude_ids))})"
+        params = list(exclude_ids)
+
+        if station_id:
+            query += " AND station_id = %s"
+            params.append(station_id)
+        return self.fetchall(query, tuple(params))

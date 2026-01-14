@@ -10,7 +10,6 @@ logger = logging.getLogger("BackfillService")
 async def main():
     service = SyncService()
 
-    # Nastav datum, kdy začaly první session (podle tvých dat 24. 2. 2025)
     start_date = datetime(2025, 2, 24)
     # Končíme včerejškem
     end_date = datetime.utcnow() - timedelta(days=1)
