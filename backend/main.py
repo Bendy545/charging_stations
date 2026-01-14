@@ -53,8 +53,6 @@ async def startup_event():
             count = cons_repo.count()
             logger.info(f"Existing consumption records: {count}")
 
-            # Pokud chceš logovat poslední data point i při startu,
-            # použij novou metodu get_data_stats():
             stats = cons_repo.get_data_stats()
             if stats['last']:
                 logger.info(f"Last data point: {stats['last']}")

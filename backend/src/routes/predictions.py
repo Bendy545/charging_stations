@@ -1,9 +1,3 @@
-"""
-Predictions API Router
-======================
-This provides API endpoints to train models and get predictions.
-"""
-
 from fastapi import APIRouter, HTTPException
 from typing import Optional
 from backend.src.services.prediction_service import HourlyPredictionService

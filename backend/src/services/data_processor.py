@@ -12,21 +12,16 @@ def process_sessions_csv(file_path):
     cursor = connection.cursor(dictionary=True)
 
     try:
-        # Načtení stanic pro mapování station_id
         cursor.execute("SELECT id, station_code FROM stations")
         stations_dict = {s['station_code']: s['id'] for s in cursor.fetchall()}
 
-        # Načtení CSV (očekáváme středník a čárku jako desetinný oddělovač)
         df = pd.read_csv(file_path, sep=';', decimal=',')
 
-        # Převod datumů
         df['Start Date'] = pd.to_datetime(df['Start Date'], errors='coerce')
         df['End Date'] = pd.to_datetime(df['End Date'], errors='coerce')
         df = df.dropna(subset=['End Date', 'Total kWh', 'Charger'])
 
-        # Extrakce kódu stanice (např. UR371) z názvu chargeru
         df['Charger_Code'] = df['Charger'].apply(lambda x: str(x).split(',')[0].strip())
-        # Pomocný sloupec pro zaokrouhlený čas konce (pro párování se spotřebou)
         df['End_Interval_15min'] = df['End Date'].dt.floor('15min')
 
         session_records = []
@@ -44,8 +39,6 @@ def process_sessions_csv(file_path):
                 ))
 
         if session_records:
-            # Smažeme staré sessions, pokud chceme čistý import,
-            # nebo použijeme ON DUPLICATE KEY UPDATE (pokud máš unikátní ID relace)
             cursor.execute("DELETE FROM charging_sessions")
 
             sql = """

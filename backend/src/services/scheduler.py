@@ -47,7 +47,7 @@ class DataScheduler:
         while self.is_running:
             try:
                 now = datetime.now(timezone.utc)
-                logger.info(f"⏰ Scheduled sync started: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                logger.info(f"Scheduled sync started: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
                 records = await self.sync_service.sync_all_stations()
 
@@ -69,7 +69,7 @@ class DataScheduler:
         if not self.is_running:
             self.is_running = True
             self.sync_task = asyncio.create_task(self.sync_task_loop())
-            logger.info("🚀 Data scheduler started")
+            logger.info("Data scheduler started")
 
     def stop(self):
         """Stop the scheduler"""
@@ -77,4 +77,4 @@ class DataScheduler:
             self.is_running = False
             if self.sync_task:
                 self.sync_task.cancel()
-            logger.info("🛑 Data scheduler stopped")
+            logger.info("Data scheduler stopped")

@@ -1,5 +1,3 @@
-from typing import List, Optional
-from datetime import date
 from backend.src.repositories.loss_repository import LossRepository
 import logging
 
@@ -10,9 +8,7 @@ class LossCalculatorService:
         self.loss_repo = LossRepository()
 
     def recalculate_all(self) -> dict:
-        """Kompletní přepočet - volá metody v repository"""
         with self.loss_repo as repo:
-            # Všechna logika z proper_loss_calculator je teď v metodách repo
             repo.ensure_tables_exist()
             repo.run_energy_distribution()
             repo.calculate_losses_with_distribution()

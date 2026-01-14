@@ -1,11 +1,3 @@
-"""
-Hourly Loss Prediction Service
-===============================
-Based on your successful test_predict.py approach!
-
-Uses hourly data + Random Forest for better accuracy.
-"""
-
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
@@ -18,132 +10,95 @@ import pickle
 import os
 
 from backend.src.repositories.prediction_repository import PredictionRepository
-from backend.src.repositories.base import BaseRepository
+from backend.src.repositories.consumption_repository import ConsumptionRepository
+from backend.src.repositories.session_repository import SessionRepository
 
 logger = logging.getLogger(__name__)
 
 
 class HourlyPredictionService:
-    """
-    Prediction service using hourly data and Random Forest
-    Based on your successful test with R² = 0.62!
-    """
-
     PROBLEMATIC_STATIONS = [1, 2]
 
     def __init__(self):
         self.model = None
-        self.repo = PredictionRepository()
+        self.prediction_repo = PredictionRepository()
+        self.consumption_repo = ConsumptionRepository()
+        self.session_repo = SessionRepository()
         self.model_path = "models/hourly_loss_model.pkl"
-        self.scaler_path = "models/feature_scaler.pkl"
 
     def load_hourly_data(self, station_id: Optional[int] = None) -> pd.DataFrame:
-        """
-        Load and aggregate hourly data from database
+        with self.consumption_repo as c_repo, self.session_repo as s_repo:
+            raw_power = c_repo.get_for_training(
+                exclude_ids=self.PROBLEMATIC_STATIONS,
+                station_id=station_id
+            )
+            raw_sessions = s_repo.get_distributed_sessions(
+                exclude_ids=self.PROBLEMATIC_STATIONS,
+                station_id=station_id
+            )
 
-        Replicates your test_predict.py logic
-        Excludes problematic stations (1, 2) from training data
-        """
+            logger.info(f"Loaded {len(raw_power)} power records, {len(raw_sessions)} session records")
 
-        with BaseRepository() as repo:
-            query_power = """
-                SELECT 
-                    timestamp,
-                    station_id,
-                    active_power_kwh,
-                    reactive_power_kwh
-                FROM power_consumption
-                WHERE station_id NOT IN ({})
-            """.format(','.join(map(str, self.PROBLEMATIC_STATIONS)))
+            if not raw_power:
+                raise ValueError("No power consumption data found in database")
 
-            if station_id:
-                query_power += f" AND station_id = {station_id}"
+            df_power = pd.DataFrame(raw_power)
+            df_dist = pd.DataFrame(raw_sessions)
 
-            df_power = pd.DataFrame(repo.fetchall(query_power))
+            df_power['timestamp'] = pd.to_datetime(df_power['timestamp'])
+            df_power['active_power_kwh'] = df_power['active_power_kwh'].astype(float)
+            df_power['reactive_power_kwh'] = df_power['reactive_power_kwh'].astype(float)
+            df_power['station_id'] = df_power['station_id'].astype(int)
 
-            query_dist = """
-                SELECT 
-                    interval_15min as timestamp,
-                    station_id,
-                    energy_kwh
-                FROM distributed_sessions
-                WHERE station_id NOT IN ({})
-            """.format(','.join(map(str, self.PROBLEMATIC_STATIONS)))
+            if not df_dist.empty:
+                df_dist['timestamp'] = pd.to_datetime(df_dist['timestamp'])
+                df_dist['energy_kwh'] = df_dist['energy_kwh'].astype(float)
+                df_dist['station_id'] = df_dist['station_id'].astype(int)
+            else:
+                logger.warning("No distributed session data found - all deliveries will be 0")
 
-            if station_id:
-                query_dist += f" AND station_id = {station_id}"
-
-            df_dist = pd.DataFrame(repo.fetchall(query_dist))
-
-        logger.info(f"Loaded {len(df_power)} power records, {len(df_dist)} session records")
-
-        if len(df_power) == 0:
-            raise ValueError("No power consumption data found in database")
-
-        if len(df_dist) == 0:
-            logger.warning("No distributed session data found - all deliveries will be 0")
-
-        df_power['timestamp'] = pd.to_datetime(df_power['timestamp'])
-        df_dist['timestamp'] = pd.to_datetime(df_dist['timestamp']) if len(df_dist) > 0 else pd.Series(dtype='datetime64[ns]')
-
-        df_power['active_power_kwh'] = df_power['active_power_kwh'].astype(float)
-        df_power['reactive_power_kwh'] = df_power['reactive_power_kwh'].astype(float)
-        df_power['station_id'] = df_power['station_id'].astype(int)
-
-        if len(df_dist) > 0:
-            df_dist['energy_kwh'] = df_dist['energy_kwh'].astype(float)
-            df_dist['station_id'] = df_dist['station_id'].astype(int)
-
-        df_power_hourly = df_power.set_index('timestamp').groupby('station_id').resample('h').agg({
-            'active_power_kwh': 'mean',
-            'reactive_power_kwh': 'mean'
-        }).reset_index()
-
-        if len(df_dist) > 0:
-            df_dist_hourly = df_dist.set_index('timestamp').groupby('station_id').resample('h').agg({
-                'energy_kwh': 'sum'
+            df_power_hourly = df_power.set_index('timestamp').groupby('station_id').resample('h').agg({
+                'active_power_kwh': 'mean',
+                'reactive_power_kwh': 'mean'
             }).reset_index()
-            df_dist_hourly.rename(columns={'energy_kwh': 'delivered_kwh'}, inplace=True)
 
-            df = pd.merge(df_power_hourly, df_dist_hourly,
-                          on=['station_id', 'timestamp'], how='left')
-        else:
-            df = df_power_hourly.copy()
-            df['delivered_kwh'] = 0.0
+            if not df_dist.empty:
+                df_dist_hourly = df_dist.set_index('timestamp').groupby('station_id').resample('h').agg({
+                    'energy_kwh': 'sum'
+                }).reset_index()
+                df_dist_hourly.rename(columns={'energy_kwh': 'delivered_kwh'}, inplace=True)
 
-        df['delivered_kwh'] = df['delivered_kwh'].fillna(0)
+                df = pd.merge(df_power_hourly, df_dist_hourly, on=['station_id', 'timestamp'], how='left')
+            else:
+                df = df_power_hourly.copy()
+                df['delivered_kwh'] = 0.0
 
-        df['loss_kwh'] = df['active_power_kwh'] - df['delivered_kwh']
+            df['delivered_kwh'] = df['delivered_kwh'].fillna(0)
+            df['loss_kwh'] = df['active_power_kwh'] - df['delivered_kwh']
 
-        df.loc[df['loss_kwh'] > (df['active_power_kwh'] * 0.2), 'loss_kwh'] = df['active_power_kwh'] * 0.05
+            df.loc[df['loss_kwh'] > (df['active_power_kwh'] * 0.2), 'loss_kwh'] = df['active_power_kwh'] * 0.05
+            df.loc[df['loss_kwh'] < 0, 'loss_kwh'] = 0
 
-        df.loc[df['loss_kwh'] < 0, 'loss_kwh'] = 0
+            df_clean = df[(df['active_power_kwh'] > 0.1) & (df['loss_kwh'] >= 0)].copy()
 
-        df_clean = df[
-            (df['active_power_kwh'] > 0.1) &
-            (df['loss_kwh'] >= 0)
-            ].copy()
+            df_clean['efficiency'] = (df_clean['delivered_kwh'] / df_clean['active_power_kwh']) * 100
+            df_clean = df_clean[df_clean['efficiency'] <= 100]
 
-        df_clean['efficiency'] = (df_clean['delivered_kwh'] /
-                                  df_clean['active_power_kwh']) * 100
-        df_clean = df_clean[df_clean['efficiency'] <= 100]
+            df_clean['hour'] = df_clean['timestamp'].dt.hour
+            df_clean['day_of_week'] = df_clean['timestamp'].dt.dayofweek
+            df_clean['is_weekend'] = (df_clean['day_of_week'] >= 5).astype(int)
 
-        df_clean['hour'] = df_clean['timestamp'].dt.hour
-        df_clean['day_of_week'] = df_clean['timestamp'].dt.dayofweek
-        df_clean['is_weekend'] = (df_clean['day_of_week'] >= 5).astype(int)
+            df_clean['hour_sin'] = np.sin(2 * np.pi * df_clean['hour'] / 24)
+            df_clean['hour_cos'] = np.cos(2 * np.pi * df_clean['hour'] / 24)
 
-        df_clean['hour_sin'] = np.sin(2 * np.pi * df_clean['hour'] / 24)
-        df_clean['hour_cos'] = np.cos(2 * np.pi * df_clean['hour'] / 24)
+            numeric_cols = ['active_power_kwh', 'reactive_power_kwh', 'delivered_kwh', 'loss_kwh', 'efficiency', 'hour_sin', 'hour_cos']
+            for col in numeric_cols:
+                df_clean[col] = df_clean[col].astype(float)
 
-        numeric_cols = ['active_power_kwh', 'reactive_power_kwh', 'delivered_kwh',
-                        'loss_kwh', 'efficiency', 'hour_sin', 'hour_cos']
-        for col in numeric_cols:
-            df_clean[col] = df_clean[col].astype(float)
+            logger.info(f"Cleaned data: {len(df_clean)} hourly records")
+            logger.info(f"Average efficiency: {df_clean['efficiency'].mean():.2f}%")
 
-        logger.info(f"Cleaned data: {len(df_clean)} hourly records")
-        logger.info(f"Average efficiency: {df_clean['efficiency'].mean():.2f}%")
-
-        return df_clean
+            return df_clean
 
     def train_model(self, station_id: Optional[int] = None) -> Dict:
         """
@@ -200,7 +155,6 @@ class HourlyPredictionService:
         logger.info(f"\n🌲 Training Random Forest...")
         self.model.fit(X_train, y_train)
 
-        # Evaluate
         y_pred_train = self.model.predict(X_train)
         y_pred_test = self.model.predict(X_test)
 
@@ -250,7 +204,7 @@ class HourlyPredictionService:
         logger.info(f"  Test MAE: {mae_test:.3f} kWh")
         logger.info(f"  Test R²: {r2_test:.4f}")
         logger.info(f"  Quality: {quality}")
-        logger.info(f"\n🎯 Top Features:")
+        logger.info(f"\n Top Features:")
         for feat, imp in list(feature_importance.items())[:5]:
             logger.info(f"    {feat}: {imp:.4f}")
 
@@ -373,15 +327,14 @@ class HourlyPredictionService:
         }
 
     def refresh_cache_for_stations(self, station_ids: List[int]):
-        for s_id in station_ids:
-            daily_preds = self.predict_daily_summary(station_id=s_id, days_ahead=14)
-
-            with self.repo as repo:
-                repo.save_predictions(s_id, daily_preds)
+        with self.prediction_repo:
+            for s_id in station_ids:
+                daily_preds = self.predict_daily_summary(station_id=s_id, days_ahead=14)
+                self.prediction_repo.save_predictions(s_id, daily_preds)
 
     def get_forecast_from_cache(self, station_id: int, days: int):
-        with self.repo as repo:
-            return repo.get_cached_predictions(station_id, days)
+        with self.prediction_repo:
+            return self.prediction_repo.get_cached_predictions(station_id, days)
 
 if __name__ == "__main__":
     """

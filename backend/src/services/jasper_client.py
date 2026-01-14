@@ -81,10 +81,7 @@ class JasperClient:
             start_time: datetime,
             end_time: datetime
     ) -> Dict[str, List[Dict]]:
-        """
-        Fetch power data for a specific station
-        Returns dict with power_type -> list of history items
-        """
+
         station_data_points = settings.data_points.get(station_code, {})
 
         if not station_data_points:
