@@ -9,8 +9,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const location = useLocation();
 
     return (
-        <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
-            <nav className="navbar navbar-dark bg-primary shadow-sm">
+        <div className="border-3 border-black" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+            <nav className="navbar navbar-dark navbar-orange shadow-sm">
                 <div className="container-fluid px-4">
                     <Link to="/" className="navbar-brand mb-0 h1 text-decoration-none">
                         <i className="bi bi-lightning-charge-fill me-2"></i>

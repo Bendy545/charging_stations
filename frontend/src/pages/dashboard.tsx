@@ -176,7 +176,7 @@ const Dashboard: React.FC = () => {
                         <i className="bi bi-bar-chart-line me-2"></i>
                         Overall Statistics
                     </h4>
-                    <div className="row g-4 mb-5">
+                    <div className="row g-4 mb-5 shadow mt-3 pb-3 bg-color-grey">
                         <div className="col-lg-3 col-md-6">
                             <StatCard
                                 title="Total Consumption"
@@ -245,7 +245,7 @@ const Dashboard: React.FC = () => {
                                  onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
                                  onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                             >
-                                <div className="card-header bg-primary text-white">
+                                <div className="card-header card-orange text-white">
                                     <h5 className="mb-0">
                                         <i className="bi bi-ev-station-fill me-2"></i>
                                         {station.station_code}

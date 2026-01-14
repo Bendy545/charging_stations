@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
-# Initialize prediction service (using your proven hourly approach!)
 prediction_service = HourlyPredictionService()
 
 
@@ -29,18 +28,17 @@ async def train_model(station_id: Optional[int] = None):
     - Periodically (e.g., once a week) to update the model with new data
     """
     try:
-        logger.info(f"Training model for station_id={station_id}")
         results = prediction_service.train_model(station_id=station_id)
+
+        target_stations = [3, 4, 5, 6, 7] if station_id is None else [station_id]
+
+        prediction_service.refresh_cache_for_stations(target_stations)
 
         return {
             "success": True,
-            "message": "Model trained successfully",
+            "message": "Model trained and cache refreshed",
             "results": results
         }
-
-    except ValueError as e:
-        logger.error(f"Training error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error during training: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -48,35 +46,12 @@ async def train_model(station_id: Optional[int] = None):
 
 @router.get("/forecast")
 async def get_forecast(station_id: int, days: int = 7):
-    """
-    Get daily loss predictions for the next N days
+    predictions = prediction_service.get_forecast_from_cache(station_id, days)
 
-    Example: GET /api/predictions/forecast?station_id=3&days=7
+    if not predictions:
+        raise HTTPException(status_code=404, detail="No cached predictions found. Please train the model.")
 
-    Returns:
-        Daily aggregated predictions with dates and expected loss
-    """
-    try:
-        if days < 1 or days > 30:
-            raise ValueError("Days must be between 1 and 30")
-
-        logger.info(f"Getting {days}-day forecast for station {station_id}")
-        predictions = prediction_service.predict_daily_summary(station_id, days)
-
-        return {
-            "success": True,
-            "station_id": station_id,
-            "forecast_days": days,
-            "predictions": predictions
-        }
-
-    except ValueError as e:
-        logger.error(f"Forecast error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error getting forecast: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+    return {"success": True, "predictions": predictions}
 
 @router.get("/forecast/hourly")
 async def get_hourly_forecast(station_id: int, hours: int = 24):
@@ -135,7 +110,6 @@ async def get_model_info():
 async def compare_predictions(station_id: int, date: str):
     try:
         # TODO: Implement comparison logic
-        # This would fetch actual loss for the date and compare with prediction
         return {
             "success": True,
             "message": "Comparison feature coming soon"
