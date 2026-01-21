@@ -197,4 +197,40 @@ export const api = {
             return { status: 'unhealthy', database: 'disconnected' };
         }
     },
+
+    async getPowerFactorByStation(
+        mode: 'active' | 'all' = 'active',
+        startDate?: string,
+        endDate?: string,
+        threshold: number = 0.05
+    ): Promise<any[]> {
+        const params = new URLSearchParams();
+        params.append('mode', mode);
+        params.append('threshold', threshold.toString());
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+
+        const url = `${API_BASE_URL}/losses/power-factor/by-station-v2?${params.toString()}`;
+        return await fetchApi<any[]>(url);
+    },
+
+    async getPowerFactorTrend(
+        stationId: number,
+        mode: 'active' | 'all' = 'active',
+        startDate?: string,
+        endDate?: string,
+        threshold: number = 0.05
+    ): Promise<{ date: string; powerFactor: number }[]> {
+        const params = new URLSearchParams();
+        params.append('station_id', stationId.toString());
+        params.append('mode', mode);
+        params.append('threshold', threshold.toString());
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+
+        const url = `${API_BASE_URL}/losses/power-factor/trend?${params.toString()}`;
+        return await fetchApi<{ date: string; powerFactor: number }[]>(url);
+    }
+
+
 };

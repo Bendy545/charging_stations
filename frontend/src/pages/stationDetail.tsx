@@ -369,7 +369,11 @@ const StationDetail: React.FC = () => {
             {activeTab === 'power-quality' && (
                 <div className="row g-4">
                     <div className="col-12">
-                        <PowerFactorTrendChart data={lossData} />
+                        <PowerFactorTrendChart
+                            stationId={Number(stationId)}
+                            startDate={dateRange.start}
+                            endDate={dateRange.end}
+                        />
                     </div>
                 </div>
             )}

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from backend.src.core.config import settings
 from backend.src.repositories import StationRepository, ConsumptionRepository, SessionRepository, LossRepository
-from backend.src.routes import stations, consumption, sessions, losses
+from backend.src.routes import stations, consumption, sessions, losses, sync
 from backend.src.services.sync_service import SyncService
 from backend.src.services.scheduler import DataScheduler
 from backend.src.routes import predictions
@@ -36,6 +36,7 @@ app.include_router(consumption.router)
 app.include_router(sessions.router)
 app.include_router(losses.router)
 app.include_router(predictions.router)
+app.include_router(sync.router)
 
 @app.on_event("startup")
 async def startup_event():
@@ -153,6 +154,7 @@ async def initial_sync(days_back: int = 7):
     except Exception as e:
         logger.error(f"Initial sync error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
