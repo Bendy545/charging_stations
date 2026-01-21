@@ -44,11 +44,20 @@ class SyncService:
 
     def _process_and_save(self, repo: ConsumptionRepository, station_id: int, power_data: Dict[str, List]) -> int:
         """Process raw data and save using Repository"""
-        active_types = ['active', 'active_master', 'active_slave']
+
+    # For station 4 (UR368), only use master meter for both active and reactive
+        if station_id == 4:
+            active_types = ['active_master']
+            reactive_types = ['reactive_master']
+        else:
+            active_types = ['active', 'active_master']
+            reactive_types = ['reactive', 'reactive_master']
+
         consumption_records = []
 
+    # Collect all unique timestamps from both active and reactive data
         timestamps = set()
-        for p_type in active_types:
+        for p_type in active_types + reactive_types:
             if p_type in power_data:
                 for item in power_data[p_type]:
                     timestamps.add(item['timeStamp'])
@@ -56,14 +65,23 @@ class SyncService:
         for ts in sorted(timestamps):
             dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
             active_total = 0
+            reactive_total = 0
 
+            # Sum active power
             for p_type in active_types:
                 if p_type in power_data:
                     for item in power_data[p_type]:
                         if item['timeStamp'] == ts:
                             active_total += abs(float(item['value'])) * 0.25
 
-            consumption_records.append((dt, station_id, active_total, 0))
+            # Sum reactive power
+            for p_type in reactive_types:
+                if p_type in power_data:
+                    for item in power_data[p_type]:
+                        if item['timeStamp'] == ts:
+                            reactive_total += abs(float(item['value'])) * 0.25
+
+            consumption_records.append((dt, station_id, active_total, reactive_total))
 
         if consumption_records:
             return repo.bulk_upsert(consumption_records)
