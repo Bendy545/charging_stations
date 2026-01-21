@@ -119,7 +119,7 @@ class LossRepository(BaseRepository):
                     station_id, 
                     DATE(timestamp) as calc_date,
                     SUM(ABS(active_power_kwh)) as total_cons,
-                    AVG(ABS(reactive_power_kwh)) as total_react,
+                    SUM(ABS(reactive_power_kwh)) as total_react,
                     COUNT(*) as interval_count
                 FROM power_consumption
                 WHERE DATE(timestamp) >= %s 
@@ -305,3 +305,131 @@ class LossRepository(BaseRepository):
         query += " GROUP BY activity_level ORDER BY avg_loss_pct DESC"
 
         return self.fetchall(query, tuple(params) if params else None)
+
+    def get_power_factor_by_station_pc(
+            self,
+            start_dt: datetime,
+            end_dt: datetime,
+            mode: str = "active",
+            active_threshold_kwh: float = 0.5
+    ) -> list:
+        """
+        Vypočítá Power Factor pro všechny stanice přímo z tabulky power_consumption.
+
+        Args:
+            start_dt: Začátek období
+            end_dt: Konec období
+            mode: "active" (pouze nabíjení) nebo "all" (vše včetně standby)
+            active_threshold_kwh: Práh pro filtraci (0.5 kWh/15min = ~2kW výkonu)
+        """
+        exclusion_list = ','.join(map(str, self.PROBLEMATIC_STATIONS)) if self.PROBLEMATIC_STATIONS else '0'
+
+        extra_where = ""
+        params = [start_dt, end_dt]
+
+        if mode == "active":
+            extra_where = "AND ABS(pc.active_power_kwh) >= %s"
+            params.append(active_threshold_kwh)
+            logger.info(f"Filtruji intervaly s výkonem nižším než {active_threshold_kwh} kWh (mode=active)")
+        else:
+            logger.info("Počítám Power Factor ze všech dat (včetně standby)")
+
+        query = f"""
+            SELECT
+                s.id AS station_id,
+                s.station_code,
+                s.station_name,
+                SUM(ABS(pc.active_power_kwh)) AS total_active,
+                SUM(ABS(pc.reactive_power_kwh)) AS total_reactive,
+                COUNT(*) as interval_count,
+                (
+                    SUM(ABS(pc.active_power_kwh)) /
+                    NULLIF(
+                        SQRT(
+                            POW(SUM(ABS(pc.active_power_kwh)), 2) +
+                            POW(SUM(ABS(pc.reactive_power_kwh)), 2)
+                        ), 0
+                    ) * 100
+                ) AS power_factor
+            FROM power_consumption pc
+            JOIN stations s ON s.id = pc.station_id
+            WHERE pc.timestamp >= %s
+              AND pc.timestamp < %s
+              AND pc.station_id NOT IN ({exclusion_list})
+              {extra_where}
+            GROUP BY s.id, s.station_code, s.station_name
+            HAVING total_active > 0
+            ORDER BY power_factor ASC
+        """
+
+        results = self.fetchall(query, tuple(params))
+
+        for res in results:
+            logger.info(
+                f"Station {res['station_code']}: PF={res['power_factor']:.1f}%, "
+                f"Active={res['total_active']:.1f}kWh, Reactive={res['total_reactive']:.1f}kVArh"
+            )
+
+        return results
+
+    def get_power_factor_trend_pc(
+            self,
+            station_id: int,
+            start_dt: datetime,
+            end_dt: datetime,
+            mode: str = "active",
+            active_threshold_kwh: float = 0.5,  # Changed default from 0.05 to 0.5
+    ) -> list:
+        """
+        Get daily power factor trend for a specific station.
+
+        Args:
+            station_id: Station ID to analyze
+            start_dt: Start datetime
+            end_dt: End datetime
+            mode: "active" or "all"
+            active_threshold_kwh: Minimum energy per interval to include
+        """
+        exclusion_list = ','.join(map(str, self.PROBLEMATIC_STATIONS)) if self.PROBLEMATIC_STATIONS else '0'
+
+        extra_where = ""
+        params = [station_id, start_dt, end_dt]
+
+        if mode == "active":
+            extra_where = "AND ABS(pc.active_power_kwh) >= %s"
+            params.append(active_threshold_kwh)
+
+        query = f"""
+            SELECT
+                DATE(pc.timestamp) AS date,
+                SUM(ABS(pc.active_power_kwh)) AS total_active,
+                SUM(ABS(pc.reactive_power_kwh)) AS total_reactive,
+                COUNT(*) as interval_count,
+                (
+                    SUM(ABS(pc.active_power_kwh)) /
+                    NULLIF(
+                        SQRT(
+                            POW(SUM(ABS(pc.active_power_kwh)),2) +
+                            POW(SUM(ABS(pc.reactive_power_kwh)),2)
+                        ), 0
+                    ) * 100
+                ) AS power_factor
+            FROM power_consumption pc
+            WHERE pc.station_id = %s
+              AND pc.timestamp >= %s
+              AND pc.timestamp < %s
+              AND pc.station_id NOT IN ({exclusion_list})
+              {extra_where}
+            GROUP BY DATE(pc.timestamp)
+            HAVING total_active > 0
+            ORDER BY DATE(pc.timestamp) ASC
+        """
+
+        results = self.fetchall(query, tuple(params))
+
+        logger.info(
+            f"Power factor trend for station {station_id}: "
+            f"{len(results)} days with data ({mode} mode, threshold={active_threshold_kwh})"
+        )
+
+        return results
