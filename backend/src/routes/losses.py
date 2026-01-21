@@ -89,3 +89,16 @@ async def get_power_factor_by_station():
     except Exception as e:
         logger.error(f"Error getting power factor by station: {e}")
         return {"success": False, "error": str(e)}
+
+@router.get("/diagnose")
+async def diagnose_data(
+        test_date: str = "2025-11-27",  # Use a recent date
+        station_id: int = 7
+):
+    """Diagnostic endpoint to check data quality"""
+    from backend.src.repositories.loss_repository import LossRepository
+
+    with LossRepository() as repo:
+        repo.diagnose_data(test_date, station_id)
+
+    return {"success": True, "message": "Check server logs for diagnostic output"}
