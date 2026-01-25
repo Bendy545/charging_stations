@@ -1,3 +1,4 @@
+// layout.tsx
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -8,53 +9,51 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const location = useLocation();
 
+    // Pomocná funkce pro aktivní linky s moderním stylem
+    const getLinkClass = (path: string) => {
+        const isActive = location.pathname === path;
+        return `btn d-flex align-items-center gap-2 px-3 py-2 rounded-3 transition-all ${
+            isActive
+                ? 'bg-white text-primary shadow-sm fw-medium'
+                : 'text-white-50 hover-text-white'
+        }`;
+    };
+
     return (
-        <div className="border-3 border-black" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
-            <nav className="navbar navbar-dark navbar-orange shadow-sm">
+        <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', fontFamily: "'Inter', sans-serif" }}>
+            <nav className="navbar navbar-dark shadow-sm"
+                 style={{ background: 'linear-gradient(90deg, #fd7e14 0%, #e65100 100%)' }}>
                 <div className="container-fluid px-4">
-                    <Link to="/" className="navbar-brand mb-0 h1 text-decoration-none">
-                        <i className="bi bi-lightning-charge-fill me-2"></i>
-                        Charging Station Analysis
+                    <Link to="/" className="navbar-brand d-flex align-items-center gap-2 fw-bold">
+                        <span>EnergyMonitor</span>
                     </Link>
-                    <div className="d-flex align-items-center gap-2">
-                        <Link
-                            to="/"
-                            className={`btn ${
-                                location.pathname === '/' ? 'btn-light' : 'btn-outline-light'
-                            }`}
-                        >
-                            <i className="bi bi-house-door me-1"></i>
+
+                    <div className="d-flex align-items-center gap-3">
+                        <Link to="/" className={getLinkClass('/')} style={{ border: 'none' }}>
+                            <i className="bi bi-grid-fill"></i>
                             Dashboard
                         </Link>
-                        <Link
-                            to="/predictions"
-                            className={`btn ${
-                                location.pathname === '/predictions' ? 'btn-light' : 'btn-outline-light'
-                            }`}
-                        >
-                            <i className="bi bi-graph-up-arrow me-1"></i>
+                        <Link to="/predictions" className={getLinkClass('/predictions')} style={{ border: 'none' }}>
+                            <i className="bi bi-stars"></i>
                             Predictions
-                            <span className="badge bg-success ms-2">ML</span>
                         </Link>
                     </div>
                 </div>
             </nav>
 
-            <main>{children}</main>
+            <main className="py-4 fade-in">
+                {children}
+            </main>
 
-            <footer className="bg-white border-top mt-5 py-3">
-                <div className="container-fluid px-4">
-                    <div className="text-center text-muted small">
-                        <p className="mb-0">
-                            © 2026 Charging Station Loss Analysis System |
-                            <span className="text-success ms-2">
-                                <i className="bi bi-robot me-1"></i>
-                                ML-Powered Predictions
-                            </span>
-                        </p>
-                    </div>
-                </div>
+            <footer className="mt-auto py-4 text-center text-muted border-top bg-white">
+                <small>© 2026 Charging Station Analytics • Powered by ML</small>
             </footer>
+
+            {/* Přidej toto do svého CSS souboru pro hladké přechody */}
+            <style>{`
+                .transition-all { transition: all 0.2s ease-in-out; }
+                .hover-text-white:hover { color: white !important; background: rgba(255,255,255,0.1); }
+            `}</style>
         </div>
     );
 };
