@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import type {  DailyPrediction, TrainingResults } from '../services/predictions-api';
-import { predictionsApi } from '../services/predictions-api.ts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
+import type { DailyPrediction } from '../services/predictions-api';
+import { predictionsApi } from '../services/predictions-api';
 import { api } from '../services/api';
 import type { Station } from '../types';
 
@@ -10,10 +10,11 @@ const PredictionsDashboard: React.FC = () => {
 
     const [stations, setStations] = useState<Station[]>([]);
     const [predictions, setPredictions] = useState<Map<number, DailyPrediction[]>>(new Map());
-    const [modelInfo, setModelInfo] = useState<TrainingResults | null>(null);
     const [loading, setLoading] = useState(true);
     const [training, setTraining] = useState(false);
     const [selectedDays, setSelectedDays] = useState(7);
+    const [viewMode, setViewMode] = useState<'compact' | 'detailed'>('compact');
+    const [expandedStations, setExpandedStations] = useState<Set<number>>(new Set());
 
     useEffect(() => {
         loadInitialData();
@@ -23,22 +24,15 @@ const PredictionsDashboard: React.FC = () => {
         setLoading(true);
         try {
             const stationsData = await api.getStations();
-
-            const validStations = stationsData.filter(
-                s => !PROBLEMATIC_STATIONS.includes(s.id)
-            );
+            const validStations = stationsData.filter(s => !PROBLEMATIC_STATIONS.includes(s.id));
             setStations(validStations);
 
             const stationIds = validStations.map(s => s.id);
             const predictionsData = await predictionsApi.getAllStationsPredictions(stationIds, selectedDays);
             setPredictions(predictionsData);
 
-            try {
-                const info = await predictionsApi.getModelInfo();
-                console.log('Model info:', info);
-            } catch (error) {
-                console.log('No trained model yet');
-            }
+
+
         } catch (error) {
             console.error('Error loading data:', error);
         } finally {
@@ -50,8 +44,8 @@ const PredictionsDashboard: React.FC = () => {
         setTraining(true);
         try {
             const results = await predictionsApi.trainModel();
-            setModelInfo(results);
-            alert(`Model trained successfully!\nR² Score: ${results.test_r2}\nMAE: ${results.test_mae_kwh} kWh\nQuality: ${results.quality_rating}`);
+
+            alert(`Model trained successfully!\nR² Score: ${(results.test_r2 * 100).toFixed(1)}%\nMAE: ${results.test_mae_kwh.toFixed(2)} kWh\nQuality: ${results.quality_rating}`);
 
             await loadInitialData();
         } catch (error) {
@@ -62,7 +56,7 @@ const PredictionsDashboard: React.FC = () => {
         }
     };
 
-    const calculateOverallPredictions = (): DailyPrediction[] => {
+    const calculateOverallPredictions = () => {
         if (predictions.size === 0) return [];
 
         const dateMap = new Map<string, number>();
@@ -76,249 +70,362 @@ const PredictionsDashboard: React.FC = () => {
 
         return Array.from(dateMap.entries()).map(([date, total]) => ({
             date,
-            predicted_daily_loss_kwh: total,
-            avg_hourly_loss_kwh: total / 24,
-            day_of_week: new Date(date).toLocaleDateString('en-US', { weekday: 'long' })
+            total,
+            average: total / stations.length,
+            day: new Date(date).toLocaleDateString('en-US', { weekday: 'short' })
         })).sort((a, b) => a.date.localeCompare(b.date));
     };
 
+    const toggleStationExpand = (stationId: number) => {
+        const newExpanded = new Set(expandedStations);
+        if (newExpanded.has(stationId)) {
+            newExpanded.delete(stationId);
+        } else {
+            newExpanded.add(stationId);
+        }
+        setExpandedStations(newExpanded);
+    };
+
+    const exportToCSV = () => {
+        const overall = calculateOverallPredictions();
+        const headers = ['Date', 'Day', 'Total Loss (kWh)', 'Average Loss (kWh)'];
+        const rows = overall.map(d => [
+            d.date,
+            d.day,
+            d.total.toFixed(2),
+            d.average.toFixed(2)
+        ]);
+
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `loss-predictions-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    };
+
     const overallPredictions = calculateOverallPredictions();
+    const totalPredictedLoss = overallPredictions.reduce((sum, p) => sum + p.total, 0);
+    const avgDailyLoss = totalPredictedLoss / (overallPredictions.length || 1);
+    const peakDay = Math.max(...overallPredictions.map(p => p.total));
 
     if (loading) {
         return (
-            <div className="container-fluid px-4 py-5">
+            <div className="min-vh-100 d-flex align-items-center justify-content-center" style={{ backgroundColor: '#f8f9fa' }}>
                 <div className="text-center">
-                    <div className="spinner-border text-primary" role="status">
+                    <div className="spinner-border text-primary" style={{ width: '3rem', height: '3rem' }}>
                         <span className="visually-hidden">Loading...</span>
                     </div>
-                    <p className="mt-3">Loading predictions...</p>
+                    <p className="mt-3 text-muted">Loading predictions...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="container-fluid px-4 py-4">
-            <div className="mb-4">
-                <div className="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2 className="mb-1">
-                            <i className="bi bi-graph-up-arrow me-2"></i>
-                            Loss Predictions Dashboard
-                        </h2>
-                        <p className="text-muted">ML-powered predictions for next {selectedDays} days</p>
-                    </div>
-                    <div>
-                        <button
-                            className="btn btn-primary"
-                            onClick={handleTrainModel}
-                            disabled={training}
-                        >
-                            {training ? (
-                                <>
-                                    <span className="spinner-border spinner-border-sm me-2"></span>
-                                    Training...
-                                </>
-                            ) : (
-                                <>
-                                    <i className="bi bi-lightning-charge me-2"></i>
-                                    Train Model
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {modelInfo && (
-                <div className="card shadow-sm mb-4 border-success">
-                    <div className="card-body">
-                        <div className="row">
-                            <div className="col-md-3">
-                                <small className="text-muted">Model Quality</small>
-                                <h4 className="mb-0 text-success">{modelInfo.quality_rating}</h4>
-                            </div>
-                            <div className="col-md-3">
-                                <small className="text-muted">R² Score</small>
-                                <h4 className="mb-0">{(modelInfo.test_r2 * 100).toFixed(1)}%</h4>
-                            </div>
-                            <div className="col-md-3">
-                                <small className="text-muted">Accuracy (MAE)</small>
-                                <h4 className="mb-0">±{modelInfo.test_mae_kwh.toFixed(2)} kWh</h4>
-                            </div>
-                            <div className="col-md-3">
-                                <small className="text-muted">Training Data</small>
-                                <h4 className="mb-0">{modelInfo.data_summary.total_hours.toLocaleString()} hours</h4>
-                            </div>
+        <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+            <div className="bg-white border-bottom shadow-sm sticky-top">
+                <div className="container-fluid px-4 py-3">
+                    <div className="row align-items-center">
+                        <div className="col-md-6">
+                            <h2 className="mb-1 fw-bold">
+                                <i className="bi bi-graph-up-arrow me-2 text-primary"></i>
+                                Loss Predictions Dashboard
+                            </h2>
+                            <p className="text-muted mb-0 small">
+                                <i className="bi bi-robot me-1"></i>
+                                ML-powered forecasting for next {selectedDays} days
+                            </p>
                         </div>
-                        {PROBLEMATIC_STATIONS.length > 0 && (
-                            <div className="alert alert-info mt-3 mb-0">
-                                <i className="bi bi-info-circle me-2"></i>
-                                <small>
-                                    <strong>Note:</strong> Stations {PROBLEMATIC_STATIONS.join(', ')} are excluded from predictions due to data quality issues.
-                                </small>
+                        <div className="col-md-6 text-md-end mt-3 mt-md-0">
+                            <div className="btn-group btn-group-sm me-2">
+                                <button
+                                    className={`btn ${viewMode === 'compact' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                    onClick={() => setViewMode('compact')}
+                                >
+                                    <i className="bi bi-grid-3x3"></i>
+                                </button>
+                                <button
+                                    className={`btn ${viewMode === 'detailed' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                    onClick={() => setViewMode('detailed')}
+                                >
+                                    <i className="bi bi-list-ul"></i>
+                                </button>
                             </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
-            <div className="card shadow-sm mb-4">
-                <div className="card-body">
-                    <label className="form-label fw-semibold">Forecast Period</label>
-                    <div className="btn-group" role="group">
-                        {[3, 7, 14].map(days => (
                             <button
-                                key={days}
-                                className={`btn ${selectedDays === days ? 'btn-primary' : 'btn-outline-primary'}`}
-                                onClick={() => setSelectedDays(days)}
+                                className="btn btn-sm btn-outline-secondary me-2"
+                                onClick={exportToCSV}
                             >
-                                {days} days
+                                <i className="bi bi-download me-1"></i>
+                                Export CSV
                             </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
 
-            <div className="card shadow-sm mb-4">
-                <div className="card-header bg-white">
-                    <h5 className="mb-0">
-                        <i className="bi bi-building me-2"></i>
-                        Overall Predictions (All Stations Combined)
-                    </h5>
-                </div>
-                <div className="card-body">
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={overallPredictions}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis
-                                dataKey="date"
-                                tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            />
-                            <YAxis label={{ value: 'Loss (kWh)', angle: -90, position: 'insideLeft' }} />
-                            <Tooltip
-                                labelFormatter={(date) => new Date(date).toLocaleDateString()}
-                                formatter={(value: number) => [`${value.toFixed(2)} kWh`, 'Predicted Loss']}
-                            />
-                            <Legend />
-                            <Bar dataKey="predicted_daily_loss_kwh" fill="#0d6efd" name="Predicted Daily Loss" />
-                        </BarChart>
-                    </ResponsiveContainer>
-
-                    <div className="row mt-3">
-                        <div className="col-md-4">
-                            <div className="text-center p-2 bg-light rounded">
-                                <small className="text-muted">Total Predicted Loss</small>
-                                <h5 className="mb-0 text-primary">
-                                    {overallPredictions.reduce((sum, p) => sum + p.predicted_daily_loss_kwh, 0).toFixed(2)} kWh
-                                </h5>
-                            </div>
-                        </div>
-                        <div className="col-md-4">
-                            <div className="text-center p-2 bg-light rounded">
-                                <small className="text-muted">Daily Average</small>
-                                <h5 className="mb-0 text-primary">
-                                    {(overallPredictions.reduce((sum, p) => sum + p.predicted_daily_loss_kwh, 0) / overallPredictions.length).toFixed(2)} kWh
-                                </h5>
-                            </div>
-                        </div>
-                        <div className="col-md-4">
-                            <div className="text-center p-2 bg-light rounded">
-                                <small className="text-muted">Peak Day</small>
-                                <h5 className="mb-0 text-primary">
-                                    {Math.max(...overallPredictions.map(p => p.predicted_daily_loss_kwh)).toFixed(2)} kWh
-                                </h5>
-                            </div>
+                            <button
+                                className="btn btn-sm btn-success"
+                                onClick={handleTrainModel}
+                                disabled={training}
+                            >
+                                {training ? (
+                                    <>
+                                        <span className="spinner-border spinner-border-sm me-1"></span>
+                                        Training...
+                                    </>
+                                ) : (
+                                    <>
+                                        <i className="bi bi-lightning-charge me-1"></i>
+                                        Retrain Model
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <h4 className="mb-3">
-                <i className="bi bi-ev-station me-2"></i>
-                Individual Station Forecasts
-            </h4>
-            <div className="row g-4">
-                {stations.map(station => {
-                    const stationPreds = predictions.get(station.id) || [];
+            <div className="container-fluid px-4 py-4">
 
-                    if (stationPreds.length === 0) {
+
+                {/* Forecast Period + Quick Stats */}
+                <div className="row g-3 mb-4">
+                    <div className="col-md-4">
+                        <div className="card shadow-sm border-0 h-100">
+                            <div className="card-body">
+                                <label className="form-label fw-semibold small mb-2">
+                                    <i className="bi bi-calendar-range me-1"></i>Forecast Period
+                                </label>
+                                <div className="btn-group d-flex" role="group">
+                                    {[3, 7, 14].map(days => (
+                                        <button
+                                            key={days}
+                                            className={`btn btn-sm ${selectedDays === days ? 'btn-primary' : 'btn-outline-primary'}`}
+                                            onClick={() => setSelectedDays(days)}
+                                        >
+                                            {days}d
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="col-md-8">
+                        <div className="card shadow-sm border-0 h-100">
+                            <div className="card-body">
+                                <div className="row text-center">
+                                    <div className="col-4">
+                                        <small className="text-muted d-block mb-1">Total Loss</small>
+                                        <h4 className="mb-0 text-primary">{totalPredictedLoss.toFixed(1)} kWh</h4>
+                                    </div>
+                                    <div className="col-4">
+                                        <small className="text-muted d-block mb-1">Daily Average</small>
+                                        <h4 className="mb-0 text-info">{avgDailyLoss.toFixed(1)} kWh</h4>
+                                    </div>
+                                    <div className="col-4">
+                                        <small className="text-muted d-block mb-1">Peak Day</small>
+                                        <h4 className="mb-0 text-danger">{peakDay.toFixed(1)} kWh</h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Overall Chart */}
+                <div className="card shadow-sm mb-4 border-0">
+                    <div className="card-header bg-white border-bottom">
+                        <div className="d-flex justify-content-between align-items-center">
+                            <h5 className="mb-0">
+                                <i className="bi bi-bar-chart-line me-2"></i>
+                                Overall Forecast (All Stations)
+                            </h5>
+                            <small className="text-muted">
+                                {overallPredictions.length} days | {stations.length} stations
+                            </small>
+                        </div>
+                    </div>
+                    <div className="card-body">
+                        <ResponsiveContainer width="100%" height={320}>
+                            <ComposedChart data={overallPredictions}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
+                                <XAxis
+                                    dataKey="date"
+                                    tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    tick={{ fontSize: 12 }}
+                                />
+                                <YAxis
+                                    label={{ value: 'Loss (kWh)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                                    tick={{ fontSize: 12 }}
+                                />
+                                <Tooltip
+                                    labelFormatter={(date) => new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                    formatter={(value: number, name: string) => {
+                                        if (name === 'Total Daily Loss') return [`${value.toFixed(2)} kWh`, name];
+                                        if (name === 'Avg per Station') return [`${value.toFixed(2)} kWh`, name];
+                                        return [value.toFixed(1), name];
+                                    }}
+                                    contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #dee2e6', borderRadius: '4px' }}
+                                />
+                                <Legend wrapperStyle={{ fontSize: '14px' }} />
+                                <Area
+                                    type="monotone"
+                                    dataKey="total"
+                                    fill="rgba(13, 110, 253, 0.1)"
+                                    stroke="#0d6efd"
+                                    strokeWidth={2}
+                                    name="Total Daily Loss"
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="average"
+                                    stroke="#20c997"
+                                    strokeWidth={2}
+                                    dot={{ r: 3 }}
+                                    name="Avg per Station"
+                                />
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Station Cards */}
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h4 className="mb-0">
+                        <i className="bi bi-ev-station me-2"></i>
+                        Individual Stations
+                    </h4>
+                    <small className="text-muted">{stations.length} active stations</small>
+                </div>
+
+                <div className="row g-3">
+                    {stations.map(station => {
+                        const stationPreds = predictions.get(station.id) || [];
+                        const isExpanded = expandedStations.has(station.id);
+
+                        if (stationPreds.length === 0) {
+                            return (
+                                <div key={station.id} className="col-lg-6">
+                                    <div className="card shadow-sm border-warning">
+                                        <div className="card-body text-center text-muted py-4">
+                                            <i className="bi bi-exclamation-triangle text-warning" style={{ fontSize: '2rem' }}></i>
+                                            <p className="mb-0 mt-2">
+                                                <strong>{station.station_code}</strong> - No predictions available
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const totalLoss = stationPreds.reduce((sum, p) => sum + p.predicted_daily_loss_kwh, 0);
+                        const avgLoss = totalLoss / stationPreds.length;
+
                         return (
                             <div key={station.id} className="col-lg-6">
-                                <div className="card shadow-sm">
-                                    <div className="card-header bg-secondary text-white">
-                                        <h6 className="mb-0">{station.station_code} - {station.station_name}</h6>
+                                <div className="card shadow-sm border-0 h-100">
+                                    <div className="card-header" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 className="mb-0">
+                                                    <i className="bi bi-ev-station-fill me-2"></i>
+                                                    {station.station_code}
+                                                </h6>
+                                                <small className="opacity-75">{station.station_name}</small>
+                                            </div>
+                                            <div className="badge bg-light text-dark">
+                                                Avg: {avgLoss.toFixed(2)} kWh/day
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="card-body text-center text-muted">
-                                        No predictions available
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    }
 
-                    const totalLoss = stationPreds.reduce((sum, p) => sum + p.predicted_daily_loss_kwh, 0);
-                    const avgLoss = totalLoss / stationPreds.length;
+                                    <div className="card-body">
+                                        {viewMode === 'detailed' ? (
+                                            <ResponsiveContainer width="100%" height={200}>
+                                                <AreaChart data={stationPreds}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                                    <XAxis
+                                                        dataKey="date"
+                                                        tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                        tick={{ fontSize: 11 }}
+                                                    />
+                                                    <YAxis tick={{ fontSize: 11 }} />
+                                                    <Tooltip
+                                                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                                                        formatter={(value: number) => `${value.toFixed(2)} kWh`}
+                                                    />
+                                                    <Area
+                                                        type="monotone"
+                                                        dataKey="predicted_daily_loss_kwh"
+                                                        stroke="#667eea"
+                                                        fill="rgba(102, 126, 234, 0.2)"
+                                                        strokeWidth={2}
+                                                    />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <ResponsiveContainer width="100%" height={150}>
+                                                <LineChart data={stationPreds}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
+                                                    <XAxis
+                                                        dataKey="date"
+                                                        tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { day: 'numeric' })}
+                                                        tick={{ fontSize: 10 }}
+                                                    />
+                                                    <YAxis tick={{ fontSize: 10 }} />
+                                                    <Tooltip
+                                                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                                                        formatter={(value: number) => `${value.toFixed(2)} kWh`}
+                                                    />
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="predicted_daily_loss_kwh"
+                                                        stroke="#667eea"
+                                                        strokeWidth={2}
+                                                        dot={{ r: 3 }}
+                                                    />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        )}
 
-                    return (
-                        <div key={station.id} className="col-lg-6">
-                            <div className="card shadow-sm">
-                                <div className="card-header bg-primary text-white">
-                                    <div className="d-flex justify-content-between align-items-center">
-                                        <h6 className="mb-0">
-                                            <i className="bi bi-ev-station-fill me-2"></i>
-                                            {station.station_code} - {station.station_name}
-                                        </h6>
-                                        <span className="badge bg-light text-dark">
-                                            Avg: {avgLoss.toFixed(2)} kWh/day
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="card-body">
-                                    <ResponsiveContainer width="100%" height={200}>
-                                        <LineChart data={stationPreds}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis
-                                                dataKey="date"
-                                                tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                            />
-                                            <YAxis />
-                                            <Tooltip
-                                                labelFormatter={(date) => new Date(date).toLocaleDateString()}
-                                                formatter={(value: number) => `${value.toFixed(2)} kWh`}
-                                            />
-                                            <Line
-                                                type="monotone"
-                                                dataKey="predicted_daily_loss_kwh"
-                                                stroke="#0d6efd"
-                                                strokeWidth={2}
-                                                dot={{ r: 4 }}
-                                                name="Predicted Loss"
-                                            />
-                                        </LineChart>
-                                    </ResponsiveContainer>
+                                        <div className="mt-3">
+                                            <div className="d-flex justify-content-between align-items-center mb-2">
+                                                <small className="text-muted fw-semibold">
+                                                    <i className="bi bi-calendar-week me-1"></i>
+                                                    {isExpanded ? 'All Days' : 'Next 3 Days'}
+                                                </small>
+                                                <button
+                                                    className="btn btn-sm btn-outline-primary"
+                                                    onClick={() => toggleStationExpand(station.id)}
+                                                >
+                                                    {isExpanded ? (
+                                                        <><i className="bi bi-chevron-up me-1"></i>Show Less</>
+                                                    ) : (
+                                                        <><i className="bi bi-chevron-down me-1"></i>Show All</>
+                                                    )}
+                                                </button>
+                                            </div>
 
-                                    <div className="mt-3">
-                                        <small className="text-muted fw-semibold">Next 3 Days:</small>
-                                        <div className="list-group list-group-flush mt-2">
-                                            {stationPreds.slice(0, 3).map(pred => (
-                                                <div key={pred.date} className="list-group-item d-flex justify-content-between align-items-center px-0">
-                                                    <span>
-                                                        <i className="bi bi-calendar3 me-2"></i>
-                                                        {new Date(pred.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                                    </span>
-                                                    <span className="badge bg-primary rounded-pill">
-                                                        {(pred.predicted_daily_loss_kwh || 0).toFixed(2)} kWh
-                                                    </span>
-                                                </div>
-                                            ))}
+                                            <div style={{ maxHeight: isExpanded ? 'none' : '200px', overflow: 'auto' }}>
+                                                {stationPreds.slice(0, isExpanded ? undefined : 3).map(pred => (
+                                                    <div key={pred.date} className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                                                        <div>
+                                                            <div className="fw-semibold">{pred.day_of_week}</div>
+                                                            <small className="text-muted">{new Date(pred.date).toLocaleDateString()}</small>
+                                                        </div>
+                                                        <span className="badge bg-primary rounded-pill">
+                                                            {pred.predicted_daily_loss_kwh.toFixed(2)} kWh
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from typing import Optional
-from backend.src.services.prediction_service import HourlyPredictionService
+from backend.src.services.prediction_service import PredictionService
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
-prediction_service = HourlyPredictionService()
+prediction_service = PredictionService()
 
 
 @router.post("/train")

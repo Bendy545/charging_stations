@@ -4,11 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="Fixed calculations">
-      <change afterPath="$PROJECT_DIR$/backend/src/routes/sync.py" afterDir="false" />
+    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="Fixed predictions.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/services/sync_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/sync_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/components/charts/lossTrendChart.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/charts/lossTrendChart.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/components/filterBar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/filterBar.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/components/layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/layout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/pages/dashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/dashboard.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/pages/predictionsDashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/predictionsDashboard.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -282,7 +284,11 @@
       <workItem from="1768950719281" duration="5425000" />
       <workItem from="1768978829913" duration="4519000" />
       <workItem from="1768987938757" duration="1220000" />
-      <workItem from="1768997192340" duration="6523000" />
+      <workItem from="1768997192340" duration="6855000" />
+      <workItem from="1769253634007" duration="2319000" />
+      <workItem from="1769333504278" duration="3963000" />
+      <workItem from="1769360236907" duration="561000" />
+      <workItem from="1769361708984" duration="481000" />
     </task>
     <task id="LOCAL-00001" summary="Changes">
       <option name="closed" value="true" />
@@ -444,7 +450,23 @@
       <option name="project" value="LOCAL" />
       <updated>1769025106089</updated>
     </task>
-    <option name="localTasksCounter" value="21" />
+    <task id="LOCAL-00021" summary="Fixed station UR368 excluded the slave values">
+      <option name="closed" value="true" />
+      <created>1769031540994</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1769031540994</updated>
+    </task>
+    <task id="LOCAL-00022" summary="Fixed predictions.">
+      <option name="closed" value="true" />
+      <created>1769256719836</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1769256719836</updated>
+    </task>
+    <option name="localTasksCounter" value="23" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -468,13 +490,15 @@
     <MESSAGE value="fixed powerFactorChart and colors" />
     <MESSAGE value="made changes and also refactored the prediction_service.py" />
     <MESSAGE value="Fixed calculations" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed calculations" />
+    <MESSAGE value="Fixed station UR368 excluded the slave values" />
+    <MESSAGE value="Fixed predictions." />
+    <option name="LAST_COMMIT_MESSAGE" value="Fixed predictions." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/charging_stations$prediction_service.coverage" NAME="prediction_service Coverage Results" MODIFIED="1768428489661" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
     <SUITE FILE_PATH="coverage/charging_stations$test_predict.coverage" NAME="test_predict Coverage Results" MODIFIED="1768124683687" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend" />
     <SUITE FILE_PATH="coverage/charging_stations$backfill.coverage" NAME="backfill Coverage Results" MODIFIED="1766488709064" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
-    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1769030940116" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
+    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1769361784376" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$test.coverage" NAME="test Coverage Results" MODIFIED="1765834907267" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$diagnostic.coverage" NAME="diagnostic Coverage Results" MODIFIED="1767734849528" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
   </component>
