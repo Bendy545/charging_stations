@@ -99,15 +99,3 @@ async def get_model_info():
         logger.error(f"Error getting model info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.post("/compare")
-async def compare_predictions(station_id: int, date: str):
-    try:
-        # TODO: Implement comparison logic
-        return {
-            "success": True,
-            "message": "Comparison feature coming soon"
-        }
-    except Exception as e:
-        logger.error(f"Error comparing predictions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
