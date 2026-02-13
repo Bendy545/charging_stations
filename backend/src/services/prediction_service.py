@@ -27,8 +27,8 @@ class PredictionService:
     PROBLEMATIC_STATIONS = [1, 2]
 
     def __init__(self):
-        self.loss_rate_model = None  # Predicts loss %
-        self.power_model = None       # Predicts future active power
+        self.loss_rate_model = None
+        self.power_model = None
         self.feature_names_loss = None
         self.feature_names_power = None
         self.prediction_repo = PredictionRepository()
@@ -77,13 +77,11 @@ class PredictionService:
             else:
                 logger.warning("No distributed session data found")
 
-            # Aggregate to hourly (sum energy, average power)
             df_power_hourly = df_power.set_index('timestamp').groupby('station_id').resample('h').agg({
                 'active_power_kw': 'mean',      # Average power during hour
                 'reactive_power_kvar': 'mean'   # Average reactive power
             }).reset_index()
 
-            # Calculate hourly energy consumption
             df_power_hourly['consumption_kwh'] = df_power_hourly['active_power_kw']  # kW × 1h = kWh
             df_power_hourly['reactive_kvarh'] = df_power_hourly['reactive_power_kvar']  # kVAr × 1h
 
@@ -99,21 +97,16 @@ class PredictionService:
 
             df['delivered_kwh'] = df['delivered_kwh'].fillna(0)
 
-            # Calculate losses (energy difference)
             df['loss_kwh'] = df['consumption_kwh'] - df['delivered_kwh']
 
-            # Calculate loss percentage
             df['loss_percentage'] = (df['loss_kwh'] / df['consumption_kwh'] * 100).fillna(0)
 
-            # Clean unrealistic values
             df.loc[df['loss_percentage'] > 30, 'loss_percentage'] = 5.0  # Cap at 30%
             df.loc[df['loss_percentage'] < 0, 'loss_percentage'] = 0
             df.loc[df['loss_kwh'] < 0, 'loss_kwh'] = 0
 
-            # Filter meaningful data (at least 0.1 kW average power)
             df_clean = df[(df['active_power_kw'] > 0.1) & (df['loss_percentage'] <= 100)].copy()
 
-            # Add time features
             df_clean['hour'] = df_clean['timestamp'].dt.hour
             df_clean['day_of_week'] = df_clean['timestamp'].dt.dayofweek
             df_clean['is_weekend'] = (df_clean['day_of_week'] >= 5).astype(int)
@@ -138,25 +131,20 @@ class PredictionService:
         df = df.copy()
         df = df.sort_values(['station_id', 'timestamp'])
 
-        # Cyclic encoding for time
         df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
         df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
         df['day_of_week_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
         df['day_of_week_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
 
-        # Power quality indicators (reactive power suggests power factor)
         df['apparent_power_kva'] = np.sqrt(df['active_power_kw']**2 + df['reactive_power_kvar']**2)
         df['power_factor'] = (df['active_power_kw'] / df['apparent_power_kva'] * 100).fillna(100)
         df['reactive_ratio'] = df['reactive_power_kvar'] / (df['active_power_kw'] + 0.001)
 
-        # Load characteristics (delivered energy indicates utilization)
         df['delivered_ratio'] = df['delivered_kwh'] / (df['consumption_kwh'] + 0.001)
 
-        # Lag features (autoregressive component)
         df['loss_pct_lag_1h'] = df.groupby('station_id')['loss_percentage'].shift(1)
         df['loss_pct_lag_24h'] = df.groupby('station_id')['loss_percentage'].shift(24)
 
-        # Rolling statistics
         df['loss_pct_rolling_mean'] = df.groupby('station_id')['loss_percentage'].transform(
             lambda x: x.rolling(window=24, min_periods=1).mean()
         )
@@ -164,14 +152,12 @@ class PredictionService:
             lambda x: x.rolling(window=24, min_periods=1).std()
         )
 
-        # Fill NaN from lag features
         mean_loss_pct = df['loss_percentage'].mean()
         df['loss_pct_lag_1h'] = df['loss_pct_lag_1h'].fillna(mean_loss_pct)
         df['loss_pct_lag_24h'] = df['loss_pct_lag_24h'].fillna(mean_loss_pct)
         df['loss_pct_rolling_mean'] = df['loss_pct_rolling_mean'].fillna(mean_loss_pct)
         df['loss_pct_rolling_std'] = df['loss_pct_rolling_std'].fillna(0)
 
-        # Station quality
         df['station_quality'] = 1
         df.loc[df['station_id'].isin(self.PROBLEMATIC_STATIONS), 'station_quality'] = 0
 
@@ -196,15 +182,11 @@ class PredictionService:
 
         df = self.create_features(df)
 
-        # ============================================================
-        # MODEL 1: Loss Rate Prediction (NO active_power feature!)
-        # ============================================================
-
         self.feature_names_loss = [
-            'delivered_kwh',        # How much energy was delivered
-            'reactive_power_kvar',  # Power quality indicator
-            'power_factor',         # Efficiency indicator
-            'reactive_ratio',       # Power quality metric
+            'delivered_kwh',
+            'reactive_power_kvar',
+            'power_factor',
+            'reactive_ratio',
             'hour', 'day_of_week', 'is_weekend',
             'hour_sin', 'hour_cos',
             'day_of_week_sin', 'day_of_week_cos',
@@ -217,9 +199,8 @@ class PredictionService:
         ]
 
         X_loss = df[self.feature_names_loss]
-        y_loss = df['loss_percentage']  # Target: loss %
+        y_loss = df['loss_percentage']
 
-        # Remove NaN
         mask = ~(X_loss.isna().any(axis=1) | y_loss.isna())
         X_loss = X_loss[mask]
         y_loss = y_loss[mask]
@@ -229,7 +210,6 @@ class PredictionService:
         logger.info(f"  Features: {len(self.feature_names_loss)}")
         logger.info(f"  Target: Loss percentage ({y_loss.min():.2f}% - {y_loss.max():.2f}%)")
 
-        # Time-series cross-validation
         tscv = TimeSeriesSplit(n_splits=5)
 
         self.loss_rate_model = RandomForestRegressor(
@@ -240,7 +220,6 @@ class PredictionService:
             n_jobs=-1
         )
 
-        # CV scores
         cv_scores = cross_val_score(
             self.loss_rate_model, X_loss, y_loss,
             cv=tscv, scoring='neg_mean_absolute_error'
@@ -248,10 +227,8 @@ class PredictionService:
 
         logger.info(f"  CV MAE: {-cv_scores.mean():.3f} ± {cv_scores.std():.3f} %")
 
-        # Train on full data
         self.loss_rate_model.fit(X_loss, y_loss)
 
-        # Evaluate on last fold
         train_idx, test_idx = list(tscv.split(X_loss))[-1]
         X_train, X_test = X_loss.iloc[train_idx], X_loss.iloc[test_idx]
         y_train, y_test = y_loss.iloc[train_idx], y_loss.iloc[test_idx]
@@ -261,20 +238,17 @@ class PredictionService:
         loss_mae = mean_absolute_error(y_test, y_pred_test)
         loss_r2 = r2_score(y_test, y_pred_test)
 
-        # ============================================================
-        # MODEL 2: Power Consumption Forecast
-        # ============================================================
 
         self.feature_names_power = [
             'hour', 'day_of_week', 'is_weekend',
             'hour_sin', 'hour_cos',
             'day_of_week_sin', 'day_of_week_cos',
             'station_id',
-            'delivered_kwh'  # Past delivery patterns help predict future consumption
+            'delivered_kwh'
         ]
 
         X_power = df[self.feature_names_power]
-        y_power = df['consumption_kwh']  # Target: total consumption
+        y_power = df['consumption_kwh']
 
         mask_power = ~(X_power.isna().any(axis=1) | y_power.isna())
         X_power = X_power[mask_power]
@@ -301,7 +275,6 @@ class PredictionService:
 
         self.power_model.fit(X_power, y_power)
 
-        # Feature importance
         importance_loss = dict(zip(self.feature_names_loss, self.loss_rate_model.feature_importances_))
         importance_loss = {k: round(v, 4) for k, v in sorted(importance_loss.items(), key=lambda x: x[1], reverse=True)}
 
@@ -369,7 +342,6 @@ class PredictionService:
         predictions = []
         now = datetime.now()
 
-        # Track recent losses for lag features
         recent_loss_pcts = recent['loss_percentage'].tail(24).tolist()
 
         for h in range(1, hours_ahead + 1):
@@ -378,7 +350,6 @@ class PredictionService:
 
             stats = hourly_stats.get(future_hour, {})
 
-            # STEP 1: Predict power consumption
             power_features = {
                 'hour': future_hour,
                 'day_of_week': future_time.weekday(),
@@ -394,7 +365,6 @@ class PredictionService:
             X_power = pd.DataFrame([power_features])[self.feature_names_power]
             predicted_consumption = max(0, self.power_model.predict(X_power)[0])
 
-            # STEP 2: Predict loss rate
             loss_features = {
                 'delivered_kwh': stats.get('delivered_kwh', recent['delivered_kwh'].mean()),
                 'reactive_power_kvar': stats.get('reactive_power_kvar', recent['reactive_power_kvar'].mean()),
@@ -418,10 +388,8 @@ class PredictionService:
             X_loss = pd.DataFrame([loss_features])[self.feature_names_loss]
             predicted_loss_pct = max(0, min(100, self.loss_rate_model.predict(X_loss)[0]))
 
-            # STEP 3: Calculate absolute loss
             predicted_loss_kwh = predicted_consumption * (predicted_loss_pct / 100)
 
-            # Update lag features
             recent_loss_pcts.append(predicted_loss_pct)
             if len(recent_loss_pcts) > 24:
                 recent_loss_pcts.pop(0)

@@ -12,7 +12,7 @@ class LossRepository(BaseRepository):
     # Date range where you have session data
     SESSION_DATA_START = datetime(2025, 3, 16)
     SESSION_DATA_END = datetime(2025, 11, 30)
-    PROBLEMATIC_STATIONS = [1, 2]
+    PROBLEMATIC_STATIONS = [1]
 
     def _round_to_15min(self, dt: datetime) -> datetime:
         return dt.replace(minute=(dt.minute // 15) * 15, second=0, microsecond=0)

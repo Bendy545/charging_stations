@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import type { Station } from '../types';
 
 const PredictionsDashboard: React.FC = () => {
-    const PROBLEMATIC_STATIONS = [1, 2];
+    const PROBLEMATIC_STATIONS = [1];
 
     const [stations, setStations] = useState<Station[]>([]);
     const [predictions, setPredictions] = useState<Map<number, DailyPrediction[]>>(new Map());
