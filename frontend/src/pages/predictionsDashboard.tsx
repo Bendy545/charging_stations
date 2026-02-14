@@ -43,9 +43,26 @@ const PredictionsDashboard: React.FC = () => {
     const handleTrainModel = async () => {
         setTraining(true);
         try {
-            const results = await predictionsApi.trainModel();
+            const response = await predictionsApi.trainModel();
 
-            alert(`Model trained successfully!\nR² Score: ${(results.test_r2 * 100).toFixed(1)}%\nMAE: ${results.test_mae_kwh.toFixed(2)} kWh\nQuality: ${results.quality_rating}`);
+            const res = response as any;
+            const lossModel = res.results?.loss_rate_model;
+            const powerModel = res.results?.power_model;
+            const dataSummary = res.results?.data_summary;
+
+            const r2 = lossModel?.test_r2;
+            const mae = lossModel?.cv_mae ?? lossModel?.test_mae_pct;
+            const powerMae = powerModel?.cv_mae_kwh;
+
+            alert(
+                `Model trained successfully!\n\n` +
+                `Loss Rate Model:\n` +
+                `  R² Score: ${r2 != null ? (r2 * 100).toFixed(1) + '%' : 'N/A'}\n` +
+                `  MAE: ${mae != null ? mae.toFixed(3) + '%' : 'N/A'}\n\n` +
+                `Power Forecast Model:\n` +
+                `  MAE: ${powerMae != null ? powerMae.toFixed(3) + ' kWh' : 'N/A'}\n\n` +
+                `Training data: ${dataSummary?.total_hours ?? 'N/A'} hours`
+            );
 
             await loadInitialData();
         } catch (error) {
