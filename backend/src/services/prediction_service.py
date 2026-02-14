@@ -1,28 +1,29 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
-from sklearn.metrics import mean_absolute_error, r2_score
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import logging
-import pickle
-import os
 
 from backend.src.repositories.prediction_repository import PredictionRepository
 from backend.src.repositories.consumption_repository import ConsumptionRepository
 from backend.src.repositories.session_repository import SessionRepository
+from backend.src.services.models.loss_rate_model import LossRateModel
+from backend.src.services.models.power_forecast_model import PowerForecastModel
 
 logger = logging.getLogger(__name__)
 
 
 class PredictionService:
     """
-    FIXED prediction service addressing:
-    1. Data leakage (removed active_power from features)
-    2. Correct units (kW and kVAr, not kWh)
-    3. Predicts loss_percentage instead of absolute loss
-    4. Training data fenced to valid session date range
+    Orchestrates the two prediction models:
+
+    1. PowerForecastModel  — predicts how much energy a station will consume
+    2. LossRateModel       — predicts what percentage of that consumption is lost
+
+    Final prediction: predicted_loss_kwh = consumption × (loss_rate / 100)
+
+    Training data is fenced to the valid session date range to prevent
+    corruption from periods without session data.
     """
 
     PROBLEMATIC_STATIONS = [1, 2]
@@ -30,29 +31,27 @@ class PredictionService:
     SESSION_DATA_END = datetime(2025, 11, 30)
 
     def __init__(self):
-        self.loss_rate_model = None
-        self.power_model = None
-        self.feature_names_loss = None
-        self.feature_names_power = None
+        self.loss_model = LossRateModel()
+        self.power_model = PowerForecastModel()
+
         self.prediction_repo = PredictionRepository()
         self.consumption_repo = ConsumptionRepository()
         self.session_repo = SessionRepository()
-        self.model_path = "models/loss_rate_model.pkl"
-        self.power_model_path = "models/power_forecast_model.pkl"
 
     def load_hourly_data(self, station_id: Optional[int] = None) -> pd.DataFrame:
         """
-        Load training data with CORRECTED understanding of units
+        Load and prepare training data from the database.
 
-        NOTE: The database stores 15-minute interval measurements:
-        - active_power_kwh: Actually kW reading × 0.25h = kWh energy in that interval
-        - reactive_power_kwh: Actually kVAr reading × 0.25h = kVArh in that interval
+        Merges power consumption with distributed charging sessions,
+        computes hourly aggregates, and calculates loss metrics.
 
-        So we need to convert back to average power for the hour.
+        Data is fenced to SESSION_DATA_START..SESSION_DATA_END to avoid
+        training on periods without session data (which would appear as
+        100% loss and corrupt the model).
 
-        IMPORTANT: Data is filtered to SESSION_DATA_START..SESSION_DATA_END
-        to avoid training on periods without session data (which would show
-        as 100% loss and corrupt the model).
+        Units note:
+            Database stores 15-min interval energy (kWh = kW × 0.25h).
+            We convert back to average power (kW) then aggregate hourly.
         """
         with self.consumption_repo as c_repo, self.session_repo as s_repo:
             raw_power = c_repo.get_for_training(
@@ -64,102 +63,106 @@ class PredictionService:
                 station_id=station_id
             )
 
-            logger.info(f"Loaded {len(raw_power)} power records, {len(raw_sessions)} session records")
+        logger.info(f"Loaded {len(raw_power)} power records, {len(raw_sessions)} session records")
 
-            if not raw_power:
-                raise ValueError("No power consumption data found in database")
+        if not raw_power:
+            raise ValueError("No power consumption data found in database")
 
-            df_power = pd.DataFrame(raw_power)
-            df_dist = pd.DataFrame(raw_sessions)
+        df_power = pd.DataFrame(raw_power)
+        df_power['timestamp'] = pd.to_datetime(df_power['timestamp'])
+        df_power['active_power_kw'] = df_power['active_power_kwh'].astype(float) / 0.25
+        df_power['reactive_power_kvar'] = df_power['reactive_power_kwh'].astype(float) / 0.25
+        df_power['station_id'] = df_power['station_id'].astype(int)
 
-            df_power['timestamp'] = pd.to_datetime(df_power['timestamp'])
-            df_power['active_power_kw'] = df_power['active_power_kwh'].astype(float) / 0.25  # Convert back to kW
-            df_power['reactive_power_kvar'] = df_power['reactive_power_kwh'].astype(float) / 0.25  # Convert to kVAr
-            df_power['station_id'] = df_power['station_id'].astype(int)
+        before = len(df_power)
+        df_power = df_power[
+            (df_power['timestamp'] >= self.SESSION_DATA_START) &
+            (df_power['timestamp'] <= self.SESSION_DATA_END)
+            ]
+        if before != len(df_power):
+            logger.info(
+                f"Date fence: {before} -> {len(df_power)} records "
+                f"({self.SESSION_DATA_START.date()} to {self.SESSION_DATA_END.date()})"
+            )
 
-            # --- FENCE: Only use data within valid session date range ---
-            before_filter = len(df_power)
-            df_power = df_power[
-                (df_power['timestamp'] >= self.SESSION_DATA_START) &
-                (df_power['timestamp'] <= self.SESSION_DATA_END)
+        if df_power.empty:
+            raise ValueError(
+                f"No power data within session range "
+                f"({self.SESSION_DATA_START.date()} - {self.SESSION_DATA_END.date()})"
+            )
+
+        df_dist = pd.DataFrame(raw_sessions)
+        if not df_dist.empty:
+            df_dist['timestamp'] = pd.to_datetime(df_dist['timestamp'])
+            df_dist['energy_kwh'] = df_dist['energy_kwh'].astype(float)
+            df_dist['station_id'] = df_dist['station_id'].astype(int)
+            df_dist = df_dist[
+                (df_dist['timestamp'] >= self.SESSION_DATA_START) &
+                (df_dist['timestamp'] <= self.SESSION_DATA_END)
                 ]
-            after_filter = len(df_power)
-            if before_filter != after_filter:
-                logger.info(
-                    f"Date fence applied: {before_filter} -> {after_filter} records "
-                    f"(filtered to {self.SESSION_DATA_START.date()} - {self.SESSION_DATA_END.date()})"
-                )
+        else:
+            logger.warning("No distributed session data found")
 
-            if df_power.empty:
-                raise ValueError(
-                    f"No power data within session date range "
-                    f"({self.SESSION_DATA_START.date()} - {self.SESSION_DATA_END.date()})"
-                )
+        df_hourly = (
+            df_power
+            .set_index('timestamp')
+            .groupby('station_id')
+            .resample('h')
+            .agg({
+                'active_power_kw': 'mean',
+                'reactive_power_kvar': 'mean'
+            })
+            .reset_index()
+        )
+        df_hourly['consumption_kwh'] = df_hourly['active_power_kw']       # kW × 1h = kWh
+        df_hourly['reactive_kvarh'] = df_hourly['reactive_power_kvar']    # kVAr × 1h
 
-            if not df_dist.empty:
-                df_dist['timestamp'] = pd.to_datetime(df_dist['timestamp'])
-                df_dist['energy_kwh'] = df_dist['energy_kwh'].astype(float)
-                df_dist['station_id'] = df_dist['station_id'].astype(int)
+        if not df_dist.empty:
+            df_dist_hourly = (
+                df_dist
+                .set_index('timestamp')
+                .groupby('station_id')
+                .resample('h')
+                .agg({'energy_kwh': 'sum'})
+                .reset_index()
+                .rename(columns={'energy_kwh': 'delivered_kwh'})
+            )
+            df = pd.merge(df_hourly, df_dist_hourly, on=['station_id', 'timestamp'], how='left')
+        else:
+            df = df_hourly.copy()
+            df['delivered_kwh'] = 0.0
 
-                # Also fence session data to same range
-                df_dist = df_dist[
-                    (df_dist['timestamp'] >= self.SESSION_DATA_START) &
-                    (df_dist['timestamp'] <= self.SESSION_DATA_END)
-                    ]
-            else:
-                logger.warning("No distributed session data found")
+        df['delivered_kwh'] = df['delivered_kwh'].fillna(0)
 
-            df_power_hourly = df_power.set_index('timestamp').groupby('station_id').resample('h').agg({
-                'active_power_kw': 'mean',      # Average power during hour
-                'reactive_power_kvar': 'mean'   # Average reactive power
-            }).reset_index()
+        df['loss_kwh'] = df['consumption_kwh'] - df['delivered_kwh']
+        df['loss_percentage'] = (df['loss_kwh'] / df['consumption_kwh'] * 100).fillna(0)
 
-            df_power_hourly['consumption_kwh'] = df_power_hourly['active_power_kw']  # kW × 1h = kWh
-            df_power_hourly['reactive_kvarh'] = df_power_hourly['reactive_power_kvar']  # kVAr × 1h
+        df.loc[df['loss_percentage'] > 30, 'loss_percentage'] = 5.0
+        df.loc[df['loss_percentage'] < 0, 'loss_percentage'] = 0
+        df.loc[df['loss_kwh'] < 0, 'loss_kwh'] = 0
 
-            if not df_dist.empty:
-                df_dist_hourly = df_dist.set_index('timestamp').groupby('station_id').resample('h').agg({
-                    'energy_kwh': 'sum'
-                }).reset_index()
-                df_dist_hourly.rename(columns={'energy_kwh': 'delivered_kwh'}, inplace=True)
-                df = pd.merge(df_power_hourly, df_dist_hourly, on=['station_id', 'timestamp'], how='left')
-            else:
-                df = df_power_hourly.copy()
-                df['delivered_kwh'] = 0.0
+        df = df[(df['active_power_kw'] > 0.1) & (df['loss_percentage'] <= 100)].copy()
 
-            df['delivered_kwh'] = df['delivered_kwh'].fillna(0)
+        df['hour'] = df['timestamp'].dt.hour
+        df['day_of_week'] = df['timestamp'].dt.dayofweek
+        df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
 
-            df['loss_kwh'] = df['consumption_kwh'] - df['delivered_kwh']
+        logger.info(f"Training data ready: {len(df)} hourly records")
+        logger.info(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+        logger.info(f"Average loss: {df['loss_percentage'].mean():.2f}%")
 
-            df['loss_percentage'] = (df['loss_kwh'] / df['consumption_kwh'] * 100).fillna(0)
-
-            df.loc[df['loss_percentage'] > 30, 'loss_percentage'] = 5.0  # Cap at 30%
-            df.loc[df['loss_percentage'] < 0, 'loss_percentage'] = 0
-            df.loc[df['loss_kwh'] < 0, 'loss_kwh'] = 0
-
-            df_clean = df[(df['active_power_kw'] > 0.1) & (df['loss_percentage'] <= 100)].copy()
-
-            df_clean['hour'] = df_clean['timestamp'].dt.hour
-            df_clean['day_of_week'] = df_clean['timestamp'].dt.dayofweek
-            df_clean['is_weekend'] = (df_clean['day_of_week'] >= 5).astype(int)
-
-            logger.info(f"Cleaned data: {len(df_clean)} hourly records")
-            logger.info(f"Date range: {df_clean['timestamp'].min()} to {df_clean['timestamp'].max()}")
-            logger.info(f"Average loss: {df_clean['loss_percentage'].mean():.2f}%")
-            logger.info(f"Loss range: {df_clean['loss_percentage'].min():.2f}% - {df_clean['loss_percentage'].max():.2f}%")
-
-            return df_clean
+        return df
 
     def create_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create features WITHOUT using active_power (to avoid leakage)
+        Engineer features for both models.
 
-        We can use:
-        - Time features (hour, day of week)
-        - Delivered energy (we're trying to predict losses given charging activity)
-        - Reactive power (power quality indicator)
-        - Historical loss patterns
-        - Station characteristics
+        Creates:
+        - Cyclical time encodings (sin/cos for hour and day)
+        - Power quality metrics (power factor, reactive ratio)
+        - Lag features (loss % at t-1h and t-24h)
+        - Rolling statistics (24h mean and std of loss %)
+        - Station quality flag
         """
         df = df.copy()
         df = df.sort_values(['station_id', 'timestamp'])
@@ -169,7 +172,7 @@ class PredictionService:
         df['day_of_week_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
         df['day_of_week_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
 
-        df['apparent_power_kva'] = np.sqrt(df['active_power_kw']**2 + df['reactive_power_kvar']**2)
+        df['apparent_power_kva'] = np.sqrt(df['active_power_kw'] ** 2 + df['reactive_power_kvar'] ** 2)
         df['power_factor'] = (df['active_power_kw'] / df['apparent_power_kva'] * 100).fillna(100)
         df['reactive_ratio'] = df['reactive_power_kvar'] / (df['active_power_kw'] + 0.001)
 
@@ -185,10 +188,10 @@ class PredictionService:
             lambda x: x.rolling(window=24, min_periods=1).std()
         )
 
-        mean_loss_pct = df['loss_percentage'].mean()
-        df['loss_pct_lag_1h'] = df['loss_pct_lag_1h'].fillna(mean_loss_pct)
-        df['loss_pct_lag_24h'] = df['loss_pct_lag_24h'].fillna(mean_loss_pct)
-        df['loss_pct_rolling_mean'] = df['loss_pct_rolling_mean'].fillna(mean_loss_pct)
+        mean_loss = df['loss_percentage'].mean()
+        df['loss_pct_lag_1h'] = df['loss_pct_lag_1h'].fillna(mean_loss)
+        df['loss_pct_lag_24h'] = df['loss_pct_lag_24h'].fillna(mean_loss)
+        df['loss_pct_rolling_mean'] = df['loss_pct_rolling_mean'].fillna(mean_loss)
         df['loss_pct_rolling_std'] = df['loss_pct_rolling_std'].fillna(0)
 
         df['station_quality'] = 1
@@ -198,138 +201,51 @@ class PredictionService:
 
     def train_model(self, station_id: Optional[int] = None) -> Dict:
         """
-        Train TWO models:
-        1. Loss rate model (predicts loss %)
-        2. Power forecast model (predicts future consumption)
+        Train both models on historical data.
 
-        This avoids data leakage while maintaining prediction accuracy.
+        Steps:
+        1. Load and merge consumption + session data
+        2. Engineer features
+        3. Train PowerForecastModel (predicts consumption)
+        4. Train LossRateModel (predicts loss %)
+        5. Save both models to disk
+
+        Returns:
+            Combined training results with metrics for both models
         """
-        logger.info("="*60)
-        logger.info("TRAINING FIXED PREDICTION MODEL (NO LEAKAGE)")
-        logger.info(f"Training data range: {self.SESSION_DATA_START.date()} to {self.SESSION_DATA_END.date()}")
-        logger.info("="*60)
+        logger.info("=" * 60)
+        logger.info("TRAINING PREDICTION MODELS")
+        logger.info(f"Data range: {self.SESSION_DATA_START.date()} to {self.SESSION_DATA_END.date()}")
+        logger.info("=" * 60)
 
         df = self.load_hourly_data(station_id)
 
         if len(df) < 100:
-            raise ValueError(f"Not enough data: {len(df)} hours")
+            raise ValueError(f"Not enough data: {len(df)} hours (need at least 100)")
 
         df = self.create_features(df)
 
-        self.feature_names_loss = [
-            'delivered_kwh',
-            'reactive_power_kvar',
-            'power_factor',
-            'reactive_ratio',
-            'hour', 'day_of_week', 'is_weekend',
-            'hour_sin', 'hour_cos',
-            'day_of_week_sin', 'day_of_week_cos',
-            'loss_pct_lag_1h',
-            'loss_pct_lag_24h',
-            'loss_pct_rolling_mean',
-            'loss_pct_rolling_std',
-            'station_id',
-            'station_quality'
-        ]
+        power_results = self.power_model.train(df)
+        loss_results = self.loss_model.train(df)
 
-        X_loss = df[self.feature_names_loss]
-        y_loss = df['loss_percentage']
+        self.power_model.save()
+        self.loss_model.save()
 
-        mask = ~(X_loss.isna().any(axis=1) | y_loss.isna())
-        X_loss = X_loss[mask]
-        y_loss = y_loss[mask]
+        logger.info("=" * 60)
+        logger.info("✓ Training complete!")
+        logger.info(f"  Loss Rate MAE: {loss_results['cv_mae']:.3f}%")
+        logger.info(f"  Power Forecast MAE: {power_results['cv_mae_kwh']:.3f} kWh")
+        logger.info("=" * 60)
 
-        logger.info(f"\n📊 LOSS RATE MODEL:")
-        logger.info(f"  Training samples: {len(X_loss)}")
-        logger.info(f"  Features: {len(self.feature_names_loss)}")
-        logger.info(f"  Target: Loss percentage ({y_loss.min():.2f}% - {y_loss.max():.2f}%)")
-
-        tscv = TimeSeriesSplit(n_splits=5)
-
-        self.loss_rate_model = RandomForestRegressor(
-            n_estimators=200,
-            max_depth=20,
-            min_samples_split=10,
-            random_state=42,
-            n_jobs=-1
-        )
-
-        cv_scores = cross_val_score(
-            self.loss_rate_model, X_loss, y_loss,
-            cv=tscv, scoring='neg_mean_absolute_error'
-        )
-
-        logger.info(f"  CV MAE: {-cv_scores.mean():.3f} ± {cv_scores.std():.3f} %")
-
-        self.loss_rate_model.fit(X_loss, y_loss)
-
-        train_idx, test_idx = list(tscv.split(X_loss))[-1]
-        X_train, X_test = X_loss.iloc[train_idx], X_loss.iloc[test_idx]
-        y_train, y_test = y_loss.iloc[train_idx], y_loss.iloc[test_idx]
-
-        y_pred_test = self.loss_rate_model.predict(X_test)
-
-        loss_mae = mean_absolute_error(y_test, y_pred_test)
-        loss_r2 = r2_score(y_test, y_pred_test)
-
-
-        self.feature_names_power = [
-            'hour', 'day_of_week', 'is_weekend',
-            'hour_sin', 'hour_cos',
-            'day_of_week_sin', 'day_of_week_cos',
-            'station_id',
-            'delivered_kwh'
-        ]
-
-        X_power = df[self.feature_names_power]
-        y_power = df['consumption_kwh']
-
-        mask_power = ~(X_power.isna().any(axis=1) | y_power.isna())
-        X_power = X_power[mask_power]
-        y_power = y_power[mask_power]
-
-        logger.info(f"\n⚡ POWER FORECAST MODEL:")
-        logger.info(f"  Training samples: {len(X_power)}")
-        logger.info(f"  Target: Consumption kWh ({y_power.min():.2f} - {y_power.max():.2f})")
-
-        self.power_model = RandomForestRegressor(
-            n_estimators=150,
-            max_depth=15,
-            min_samples_split=10,
-            random_state=42,
-            n_jobs=-1
-        )
-
-        cv_scores_power = cross_val_score(
-            self.power_model, X_power, y_power,
-            cv=tscv, scoring='neg_mean_absolute_error'
-        )
-
-        logger.info(f"  CV MAE: {-cv_scores_power.mean():.3f} kWh")
-
-        self.power_model.fit(X_power, y_power)
-
-        importance_loss = dict(zip(self.feature_names_loss, self.loss_rate_model.feature_importances_))
-        importance_loss = {k: round(v, 4) for k, v in sorted(importance_loss.items(), key=lambda x: x[1], reverse=True)}
-
-        self._save_models()
-
-        results = {
+        return {
             'success': True,
             'model_type': 'Dual Model (Loss Rate + Power Forecast)',
             'training_date_range': {
                 'start': self.SESSION_DATA_START.date().isoformat(),
                 'end': self.SESSION_DATA_END.date().isoformat()
             },
-            'loss_rate_model': {
-                'test_mae_pct': round(loss_mae, 3),
-                'test_r2': round(loss_r2, 4),
-                'cv_mae': round(-cv_scores.mean(), 3)
-            },
-            'power_model': {
-                'cv_mae_kwh': round(-cv_scores_power.mean(), 3)
-            },
-            'feature_importance': importance_loss,
+            'loss_rate_model': loss_results,
+            'power_model': power_results,
             'data_summary': {
                 'total_hours': len(df),
                 'avg_loss_pct': round(df['loss_percentage'].mean(), 2),
@@ -337,30 +253,27 @@ class PredictionService:
             }
         }
 
-        logger.info(f"\n✓ Training Complete!")
-        logger.info(f"="*60)
-        logger.info(f"  Loss Rate MAE: {loss_mae:.3f}%, R²: {loss_r2:.4f}")
-        logger.info(f"  Power Forecast MAE: {-cv_scores_power.mean():.3f} kWh")
-        logger.info(f"\n🎯 Top Features for Loss Prediction:")
-        for feat, imp in list(importance_loss.items())[:5]:
-            logger.info(f"    {feat}: {imp:.4f}")
-
-        return results
+    def _ensure_models_loaded(self):
+        """Load models from disk if not already in memory"""
+        if not self.loss_model.is_ready or not self.power_model.is_ready:
+            if not self.loss_model.load() or not self.power_model.load():
+                raise RuntimeError("Models not found. Train first via POST /api/predictions/train")
 
     def predict_next_hours(self, station_id: int, hours_ahead: int = 24) -> List[Dict]:
         """
-        Predict losses for next N hours using BOTH models
+        Predict losses for the next N hours.
 
-        Process:
-        1. Predict future power consumption (Model 2)
-        2. Predict loss rate (Model 1)
-        3. Calculate absolute loss: consumption × loss_rate
+        Process for each future hour:
+        1. PowerForecastModel predicts consumption (kWh)
+        2. LossRateModel predicts loss rate (%)
+        3. Absolute loss = consumption × (loss_rate / 100)
+
+        Lag features are updated with each prediction to maintain
+        autoregressive consistency.
         """
-        if self.loss_rate_model is None or self.power_model is None:
-            self._load_models()
+        self._ensure_models_loaded()
 
         df = self.load_hourly_data(station_id=station_id)
-
         df = self.create_features(df)
 
         if len(df) < 48:
@@ -368,7 +281,6 @@ class PredictionService:
 
         recent = df.tail(48)
 
-        # Get hourly patterns
         hourly_stats = recent.groupby('hour').agg({
             'delivered_kwh': 'mean',
             'reactive_power_kvar': 'mean',
@@ -377,18 +289,17 @@ class PredictionService:
             'consumption_kwh': 'mean'
         }).to_dict('index')
 
+        recent_loss_pcts = recent['loss_percentage'].tail(24).tolist()
+
         predictions = []
         now = datetime.now()
-
-        recent_loss_pcts = recent['loss_percentage'].tail(24).tolist()
 
         for h in range(1, hours_ahead + 1):
             future_time = now + timedelta(hours=h)
             future_hour = future_time.hour
-
             stats = hourly_stats.get(future_hour, {})
 
-            power_features = {
+            time_features = {
                 'hour': future_hour,
                 'day_of_week': future_time.weekday(),
                 'is_weekend': 1 if future_time.weekday() >= 5 else 0,
@@ -396,25 +307,25 @@ class PredictionService:
                 'hour_cos': np.cos(2 * np.pi * future_hour / 24),
                 'day_of_week_sin': np.sin(2 * np.pi * future_time.weekday() / 7),
                 'day_of_week_cos': np.cos(2 * np.pi * future_time.weekday() / 7),
-                'station_id': station_id,
-                'delivered_kwh': stats.get('delivered_kwh', recent['delivered_kwh'].mean())
             }
 
-            X_power = pd.DataFrame([power_features])[self.feature_names_power]
-            predicted_consumption = max(0, self.power_model.predict(X_power)[0])
+            avg_delivered = stats.get('delivered_kwh', recent['delivered_kwh'].mean())
+
+            power_features = {
+                **time_features,
+                'station_id': station_id,
+                'delivered_kwh': avg_delivered
+            }
+            predicted_consumption = self.power_model.predict(
+                pd.DataFrame([power_features])
+            )
 
             loss_features = {
-                'delivered_kwh': stats.get('delivered_kwh', recent['delivered_kwh'].mean()),
+                **time_features,
+                'delivered_kwh': avg_delivered,
                 'reactive_power_kvar': stats.get('reactive_power_kvar', recent['reactive_power_kvar'].mean()),
                 'power_factor': stats.get('power_factor', recent['power_factor'].mean()),
                 'reactive_ratio': stats.get('reactive_ratio', recent['reactive_ratio'].mean()),
-                'hour': future_hour,
-                'day_of_week': future_time.weekday(),
-                'is_weekend': 1 if future_time.weekday() >= 5 else 0,
-                'hour_sin': power_features['hour_sin'],
-                'hour_cos': power_features['hour_cos'],
-                'day_of_week_sin': power_features['day_of_week_sin'],
-                'day_of_week_cos': power_features['day_of_week_cos'],
                 'loss_pct_lag_1h': recent_loss_pcts[-1] if recent_loss_pcts else recent['loss_percentage'].mean(),
                 'loss_pct_lag_24h': recent_loss_pcts[-24] if len(recent_loss_pcts) >= 24 else recent['loss_percentage'].mean(),
                 'loss_pct_rolling_mean': np.mean(recent_loss_pcts[-24:]),
@@ -422,9 +333,9 @@ class PredictionService:
                 'station_id': station_id,
                 'station_quality': 0 if station_id in self.PROBLEMATIC_STATIONS else 1
             }
-
-            X_loss = pd.DataFrame([loss_features])[self.feature_names_loss]
-            predicted_loss_pct = max(0, min(100, self.loss_rate_model.predict(X_loss)[0]))
+            predicted_loss_pct = self.loss_model.predict(
+                pd.DataFrame([loss_features])
+            )
 
             predicted_loss_kwh = predicted_consumption * (predicted_loss_pct / 100)
 
@@ -444,16 +355,16 @@ class PredictionService:
         return predictions
 
     def predict_daily_summary(self, station_id: int, days_ahead: int = 7) -> List[Dict]:
-        """Predict daily summaries"""
+        """Aggregate hourly predictions into daily summaries"""
         hourly_preds = self.predict_next_hours(station_id, hours_ahead=days_ahead * 24)
 
-        daily_summary = []
         hourly_df = pd.DataFrame(hourly_preds)
         hourly_df['date'] = pd.to_datetime(hourly_df['timestamp']).dt.date
 
-        for date, group in hourly_df.groupby('date'):
+        daily_summary = []
+        for date_val, group in hourly_df.groupby('date'):
             daily_summary.append({
-                'date': date.isoformat(),
+                'date': date_val.isoformat(),
                 'predicted_daily_loss_kwh': round(group['predicted_loss_kwh'].sum(), 2),
                 'avg_hourly_loss_kwh': round(group['predicted_loss_kwh'].mean(), 2),
                 'avg_loss_pct': round(group['predicted_loss_pct'].mean(), 2),
@@ -462,66 +373,30 @@ class PredictionService:
 
         return daily_summary
 
+
     def refresh_cache_for_stations(self, station_ids: List[int]):
-        """Refresh prediction cache"""
+        """Generate and cache 14-day forecasts for given stations"""
         with self.prediction_repo:
             for s_id in station_ids:
                 daily_preds = self.predict_daily_summary(station_id=s_id, days_ahead=14)
                 self.prediction_repo.save_predictions(s_id, daily_preds)
-                logger.info(f"Cached predictions for station {s_id}")
+                logger.info(f"Cached 14-day forecast for station {s_id}")
 
     def get_forecast_from_cache(self, station_id: int, days: int):
-        """Get cached predictions"""
+        """Retrieve cached predictions from database"""
         with self.prediction_repo:
             return self.prediction_repo.get_cached_predictions(station_id, days)
 
-    def _save_models(self):
-        """Save both models"""
-        os.makedirs('models', exist_ok=True)
-        with open(self.model_path, 'wb') as f:
-            pickle.dump({
-                'model': self.loss_rate_model,
-                'feature_names': self.feature_names_loss
-            }, f)
-        with open(self.power_model_path, 'wb') as f:
-            pickle.dump({
-                'model': self.power_model,
-                'feature_names': self.feature_names_power
-            }, f)
-        logger.info("Models saved")
-
-    def _load_models(self):
-        """Load both models"""
-        if os.path.exists(self.model_path) and os.path.exists(self.power_model_path):
-            with open(self.model_path, 'rb') as f:
-                saved = pickle.load(f)
-                self.loss_rate_model = saved['model']
-                self.feature_names_loss = saved['feature_names']
-            with open(self.power_model_path, 'rb') as f:
-                saved = pickle.load(f)
-                self.power_model = saved['model']
-                self.feature_names_power = saved['feature_names']
-            logger.info("Models loaded")
-
     def get_model_info(self) -> Dict:
-        """Get model info"""
-        if self.loss_rate_model is None:
-            self._load_models()
-
+        """Get status and metadata for both models"""
+        self._ensure_models_loaded()
         return {
             'status': 'Models ready',
-            'model_type': 'Dual Model (No Leakage)',
+            'model_type': 'Dual Model (Loss Rate + Power Forecast)',
             'training_date_range': {
                 'start': self.SESSION_DATA_START.date().isoformat(),
                 'end': self.SESSION_DATA_END.date().isoformat()
             },
-            'loss_rate_model': {
-                'n_estimators': self.loss_rate_model.n_estimators,
-                'n_features': len(self.feature_names_loss),
-                'features': self.feature_names_loss
-            },
-            'power_model': {
-                'n_estimators': self.power_model.n_estimators,
-                'n_features': len(self.feature_names_power)
-            }
+            'loss_rate_model': self.loss_model.get_info(),
+            'power_model': self.power_model.get_info()
         }
