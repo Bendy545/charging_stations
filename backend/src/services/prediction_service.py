@@ -22,9 +22,12 @@ class PredictionService:
     1. Data leakage (removed active_power from features)
     2. Correct units (kW and kVAr, not kWh)
     3. Predicts loss_percentage instead of absolute loss
+    4. Training data fenced to valid session date range
     """
 
     PROBLEMATIC_STATIONS = [1, 2]
+    SESSION_DATA_START = datetime(2025, 3, 16)
+    SESSION_DATA_END = datetime(2025, 11, 30)
 
     def __init__(self):
         self.loss_rate_model = None
@@ -46,6 +49,10 @@ class PredictionService:
         - reactive_power_kwh: Actually kVAr reading × 0.25h = kVArh in that interval
 
         So we need to convert back to average power for the hour.
+
+        IMPORTANT: Data is filtered to SESSION_DATA_START..SESSION_DATA_END
+        to avoid training on periods without session data (which would show
+        as 100% loss and corrupt the model).
         """
         with self.consumption_repo as c_repo, self.session_repo as s_repo:
             raw_power = c_repo.get_for_training(
@@ -70,10 +77,35 @@ class PredictionService:
             df_power['reactive_power_kvar'] = df_power['reactive_power_kwh'].astype(float) / 0.25  # Convert to kVAr
             df_power['station_id'] = df_power['station_id'].astype(int)
 
+            # --- FENCE: Only use data within valid session date range ---
+            before_filter = len(df_power)
+            df_power = df_power[
+                (df_power['timestamp'] >= self.SESSION_DATA_START) &
+                (df_power['timestamp'] <= self.SESSION_DATA_END)
+                ]
+            after_filter = len(df_power)
+            if before_filter != after_filter:
+                logger.info(
+                    f"Date fence applied: {before_filter} -> {after_filter} records "
+                    f"(filtered to {self.SESSION_DATA_START.date()} - {self.SESSION_DATA_END.date()})"
+                )
+
+            if df_power.empty:
+                raise ValueError(
+                    f"No power data within session date range "
+                    f"({self.SESSION_DATA_START.date()} - {self.SESSION_DATA_END.date()})"
+                )
+
             if not df_dist.empty:
                 df_dist['timestamp'] = pd.to_datetime(df_dist['timestamp'])
                 df_dist['energy_kwh'] = df_dist['energy_kwh'].astype(float)
                 df_dist['station_id'] = df_dist['station_id'].astype(int)
+
+                # Also fence session data to same range
+                df_dist = df_dist[
+                    (df_dist['timestamp'] >= self.SESSION_DATA_START) &
+                    (df_dist['timestamp'] <= self.SESSION_DATA_END)
+                    ]
             else:
                 logger.warning("No distributed session data found")
 
@@ -112,6 +144,7 @@ class PredictionService:
             df_clean['is_weekend'] = (df_clean['day_of_week'] >= 5).astype(int)
 
             logger.info(f"Cleaned data: {len(df_clean)} hourly records")
+            logger.info(f"Date range: {df_clean['timestamp'].min()} to {df_clean['timestamp'].max()}")
             logger.info(f"Average loss: {df_clean['loss_percentage'].mean():.2f}%")
             logger.info(f"Loss range: {df_clean['loss_percentage'].min():.2f}% - {df_clean['loss_percentage'].max():.2f}%")
 
@@ -173,6 +206,7 @@ class PredictionService:
         """
         logger.info("="*60)
         logger.info("TRAINING FIXED PREDICTION MODEL (NO LEAKAGE)")
+        logger.info(f"Training data range: {self.SESSION_DATA_START.date()} to {self.SESSION_DATA_END.date()}")
         logger.info("="*60)
 
         df = self.load_hourly_data(station_id)
@@ -283,6 +317,10 @@ class PredictionService:
         results = {
             'success': True,
             'model_type': 'Dual Model (Loss Rate + Power Forecast)',
+            'training_date_range': {
+                'start': self.SESSION_DATA_START.date().isoformat(),
+                'end': self.SESSION_DATA_END.date().isoformat()
+            },
             'loss_rate_model': {
                 'test_mae_pct': round(loss_mae, 3),
                 'test_r2': round(loss_r2, 4),
@@ -473,6 +511,10 @@ class PredictionService:
         return {
             'status': 'Models ready',
             'model_type': 'Dual Model (No Leakage)',
+            'training_date_range': {
+                'start': self.SESSION_DATA_START.date().isoformat(),
+                'end': self.SESSION_DATA_END.date().isoformat()
+            },
             'loss_rate_model': {
                 'n_estimators': self.loss_rate_model.n_estimators,
                 'n_features': len(self.feature_names_loss),
