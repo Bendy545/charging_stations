@@ -24,7 +24,7 @@ async def train_model(station_id: Optional[int] = None):
     try:
         results = prediction_service.train_model(station_id=station_id)
 
-        target_stations = [3, 4, 5, 6, 7] if station_id is None else [station_id]
+        target_stations = [1, 2, 3, 4, 5, 6, 7] if station_id is None else [station_id]
 
         prediction_service.refresh_cache_for_stations(target_stations)
 

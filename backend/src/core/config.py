@@ -37,22 +37,22 @@ class Config:
         data_points = self._config['jasper_vision']['data_points']
 
         data_point_definitions = {
-            'UR371_ACTIVE': ('UR371', 'active'),
-            'UR371_REACTIVE': ('UR371', 'reactive'),
-            'UR372_ACTIVE': ('UR372', 'active'),
-            'UR372_REACTIVE': ('UR372', 'reactive'),
-            'UR367_ACTIVE': ('UR367', 'active'),
-            'UR367_REACTIVE': ('UR367', 'reactive'),
-            'UR368_ACTIVE_MASTER': ('UR368', 'active_master'),
-            'UR368_REACTIVE_MASTER': ('UR368', 'reactive_master'),
-            'UR368_ACTIVE_SLAVE': ('UR368', 'active_slave'),
-            'UR368_REACTIVE_SLAVE': ('UR368', 'reactive_slave'),
-            'UR369_ACTIVE': ('UR369', 'active'),
-            'UR369_REACTIVE': ('UR369', 'reactive'),
-            'UR370_ACTIVE': ('UR370', 'active'),
-            'UR370_REACTIVE': ('UR370', 'reactive'),
-            'UR366_ACTIVE': ('UR366', 'active'),
-            'UR366_REACTIVE': ('UR366', 'reactive')
+            'ST1_ACTIVE': ('ST1', 'active'),
+            'ST1_REACTIVE': ('ST1', 'reactive'),
+            'ST2_ACTIVE': ('ST2', 'active'),
+            'ST2_REACTIVE': ('ST2', 'reactive'),
+            'ST3_ACTIVE': ('ST3', 'active'),
+            'ST3_REACTIVE': ('ST3', 'reactive'),
+            'ST4_ACTIVE_MASTER': ('ST4', 'active_master'),
+            'ST4_REACTIVE_MASTER': ('ST4', 'reactive_master'),
+            'ST4_ACTIVE_SLAVE': ('ST4', 'active_slave'),
+            'ST4_REACTIVE_SLAVE': ('ST4', 'reactive_slave'),
+            'ST5_ACTIVE': ('ST5', 'active'),
+            'ST5_REACTIVE': ('ST5', 'reactive'),
+            'ST6_ACTIVE': ('ST6', 'active'),
+            'ST6_REACTIVE': ('ST6', 'reactive'),
+            'ST7_ACTIVE': ('ST7', 'active'),
+            'ST7_REACTIVE': ('ST7', 'reactive')
         }
 
         for env_key, (station, power_type) in data_point_definitions.items():

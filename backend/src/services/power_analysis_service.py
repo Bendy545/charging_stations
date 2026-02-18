@@ -27,9 +27,8 @@ class PowerAnalysisService:
             if not losses:
                 return None
 
-            ACTIVE_THRESHOLD_KWH = 0.5
 
-            active_losses = [l for l in losses if l.total_consumption_kwh >= ACTIVE_THRESHOLD_KWH]
+            active_losses = losses
 
             if not active_losses:
                 return {

@@ -6,7 +6,6 @@ import { api } from '../services/api';
 import type { Station } from '../types';
 
 const PredictionsDashboard: React.FC = () => {
-    const PROBLEMATIC_STATIONS = [1];
 
     const [stations, setStations] = useState<Station[]>([]);
     const [predictions, setPredictions] = useState<Map<number, DailyPrediction[]>>(new Map());
@@ -24,10 +23,8 @@ const PredictionsDashboard: React.FC = () => {
         setLoading(true);
         try {
             const stationsData = await api.getStations();
-            const validStations = stationsData.filter(s => !PROBLEMATIC_STATIONS.includes(s.id));
-            setStations(validStations);
-
-            const stationIds = validStations.map(s => s.id);
+            const stationIds = stationsData.map(s => s.id);
+            setStations(stationsData)
             const predictionsData = await predictionsApi.getAllStationsPredictions(stationIds, selectedDays);
             setPredictions(predictionsData);
 
