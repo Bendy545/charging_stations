@@ -24,13 +24,16 @@ async def resync_station(station_id: int, days_back: int = 90):
             if not station:
                 return {"success": False, "error": "Station not found"}
 
-        logger.info(f"Starting resync for station {station_id} ({station.station_code})")
+        real_station_id, real_code = sync_service._resolve_station(station.id, station.station_code)
+        if real_station_id is None:
+            return {"success": False, "error": "Swap target station not found"}
 
-        # Delete existing data for this station
+        logger.info(f"Starting resync for station {station.station_code} → saving as {real_code} (id={real_station_id})")
+
         with ConsumptionRepository() as repo:
             deleted = repo.execute(
                 "DELETE FROM power_consumption WHERE station_id = %s",
-                (station_id,)
+                (real_station_id,)
             )
 
         logger.info(f"Deleted {deleted} existing records for station {station_id}")
@@ -49,7 +52,7 @@ async def resync_station(station_id: int, days_back: int = 90):
             return {"success": False, "error": "No data returned from API"}
 
         with ConsumptionRepository() as repo:
-            records = sync_service._process_and_save(repo, station.id, power_data)
+            records = sync_service._process_and_save(repo, real_station_id, power_data)
 
         logger.info(f"Successfully added {records} records for station {station_id}")
 

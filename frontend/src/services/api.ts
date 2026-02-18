@@ -199,7 +199,7 @@ export const api = {
     },
 
     async getPowerFactorByStation(
-        mode: 'active' | 'all' = 'active',
+        mode: 'active' | 'all' = 'all',
         startDate?: string,
         endDate?: string,
         threshold: number = 0.05
@@ -216,7 +216,7 @@ export const api = {
 
     async getPowerFactorTrend(
         stationId: number,
-        mode: 'active' | 'all' = 'active',
+        mode: 'active' | 'all' = 'all',
         startDate?: string,
         endDate?: string,
         threshold: number = 0.05

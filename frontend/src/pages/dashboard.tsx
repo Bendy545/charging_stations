@@ -35,7 +35,7 @@ const Dashboard: React.FC = () => {
             const [stationsData, lossData, pfRows] = await Promise.all([
                 api.getStations(),
                 api.getLosses(undefined, dateRange.start, dateRange.end),
-                api.getPowerFactorByStation('active', dateRange.start, dateRange.end, 0.05),
+                api.getPowerFactorByStation('all', dateRange.start, dateRange.end, 0.05),
             ]);
 
             setStations(stationsData);
@@ -168,7 +168,7 @@ const Dashboard: React.FC = () => {
                             </h2>
                             <p className="text-muted mb-0 small">
                                 <i className="bi bi-geo-alt me-1"></i>
-                                Jeníšov Charging Station Location
+                                Charging Station Location
                             </p>
                         </div>
                         <div className="col-md-6 text-md-end mt-3 mt-md-0">

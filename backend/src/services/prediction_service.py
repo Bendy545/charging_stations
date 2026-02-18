@@ -26,7 +26,7 @@ class PredictionService:
     corruption from periods without session data.
     """
 
-    PROBLEMATIC_STATIONS = [1, 2]
+    PROBLEMATIC_STATIONS = [0]
     SESSION_DATA_START = datetime(2025, 3, 16)
     SESSION_DATA_END = datetime(2025, 11, 30)
 

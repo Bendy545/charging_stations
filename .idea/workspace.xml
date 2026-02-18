@@ -4,13 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="Updated predictions">
-      <change afterPath="$PROJECT_DIR$/backend/src/services/models/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/services/models/loss_rate_model.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/services/models/power_forecast_model.py" afterDir="false" />
+    <list default="true" id="fd4f9d01-5d7d-48f0-a28c-a52e8124ca85" name="Changes" comment="Restructured code for the AI/ML and fixed errors in the frontend when training model">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/core/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/repositories/loss_repository.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/repositories/loss_repository.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/routes/predictions.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/predictions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/routes/sync.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/sync.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/power_analysis_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/power_analysis_service.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/services/prediction_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/prediction_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/services/sync_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/services/sync_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/components/charts/powerFactorTrendChart.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/charts/powerFactorTrendChart.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/pages/dashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/dashboard.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/src/pages/predictionsDashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/predictionsDashboard.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/services/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/services/api.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -54,6 +60,10 @@
     &quot;accountId&quot;: &quot;525d4bcd-5da5-45eb-a0f6-88d3def6a7cd&quot;
   }
 }</component>
+  <component name="KubernetesApiPersistence"><![CDATA[{}]]></component>
+  <component name="KubernetesApiProvider"><![CDATA[{
+  "isMigrated": true
+}]]></component>
   <component name="ProblemsViewState">
     <option name="selectedTabId" value="CurrentFile" />
   </component>
@@ -295,7 +305,11 @@
       <workItem from="1770058032790" duration="2094000" />
       <workItem from="1771004708942" duration="7415000" />
       <workItem from="1771061696861" duration="1052000" />
-      <workItem from="1771069310763" duration="1156000" />
+      <workItem from="1771069310763" duration="1276000" />
+      <workItem from="1771179873207" duration="635000" />
+      <workItem from="1771233479782" duration="328000" />
+      <workItem from="1771413642296" duration="785000" />
+      <workItem from="1771439411219" duration="9665000" />
     </task>
     <task id="LOCAL-00001" summary="Changes">
       <option name="closed" value="true" />
@@ -505,7 +519,15 @@
       <option name="project" value="LOCAL" />
       <updated>1771062246600</updated>
     </task>
-    <option name="localTasksCounter" value="27" />
+    <task id="LOCAL-00027" summary="Restructured code for the AI/ML and fixed errors in the frontend when training model">
+      <option name="closed" value="true" />
+      <created>1771070628557</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1771070628557</updated>
+    </task>
+    <option name="localTasksCounter" value="28" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -535,13 +557,14 @@
     <MESSAGE value="updated stationDetail.tsx" />
     <MESSAGE value="Fixed some mistakes for the final version" />
     <MESSAGE value="Updated predictions" />
-    <option name="LAST_COMMIT_MESSAGE" value="Updated predictions" />
+    <MESSAGE value="Restructured code for the AI/ML and fixed errors in the frontend when training model" />
+    <option name="LAST_COMMIT_MESSAGE" value="Restructured code for the AI/ML and fixed errors in the frontend when training model" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/charging_stations$prediction_service.coverage" NAME="prediction_service Coverage Results" MODIFIED="1768428489661" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
     <SUITE FILE_PATH="coverage/charging_stations$test_predict.coverage" NAME="test_predict Coverage Results" MODIFIED="1768124683687" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend" />
     <SUITE FILE_PATH="coverage/charging_stations$backfill.coverage" NAME="backfill Coverage Results" MODIFIED="1766488709064" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
-    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1771070320474" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
+    <SUITE FILE_PATH="coverage/charging_stations$main.coverage" NAME="main Coverage Results" MODIFIED="1771454007101" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$test.coverage" NAME="test Coverage Results" MODIFIED="1765834907267" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src" />
     <SUITE FILE_PATH="coverage/charging_stations$diagnostic.coverage" NAME="diagnostic Coverage Results" MODIFIED="1767734849528" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend/src/services" />
   </component>

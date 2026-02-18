@@ -7,14 +7,42 @@ from backend.src.repositories import StationRepository, ConsumptionRepository
 logger = logging.getLogger(__name__)
 
 class SyncService:
+
+    STATION_SWAP_MAP = {
+        'ST1': 'ST2',
+        'ST2': 'ST1',
+    }
     def __init__(self):
         self.jasper_client = JasperClient()
+
+    def _resolve_station(self, station_id: int, station_code: str):
+        """
+        Resolve the real station_id for saving data.
+        Handles cases where Jasper returns data under the wrong station code.
+        """
+        real_code = self.STATION_SWAP_MAP.get(station_code, station_code)
+
+        if real_code != station_code:
+            with StationRepository() as repo:
+                real_station = repo.get_by_code(real_code)
+                if not real_station:
+                    logger.error(f"Swap target {real_code} not found in DB")
+                    return None, None
+                logger.info(f"Station swap: Jasper '{station_code}' → DB '{real_code}' (id={real_station.id})")
+                return real_station.id, real_code
+
+        return station_id, station_code
 
     async def sync_station_data(self, station_id: int, station_code: str) -> int:
         """Synchronize data for a single station using Repositories"""
         try:
+
+            real_station_id, real_code = self._resolve_station(station_id, station_code)
+            if real_station_id is None:
+                return 0
+
             with ConsumptionRepository() as consumption_repo:
-                last_sync = consumption_repo.get_last_timestamp(station_id)
+                last_sync = consumption_repo.get_last_timestamp(real_station_id)
                 if not last_sync:
                     last_sync = datetime.utcnow() - timedelta(hours=24)
 
@@ -32,7 +60,7 @@ class SyncService:
                     return 0
 
                 records_added = self._process_and_save(
-                    consumption_repo, station_id, power_data
+                    consumption_repo, real_station_id, power_data
                 )
 
                 logger.info(f"Synced {records_added} records for {station_code}")
@@ -47,7 +75,7 @@ class SyncService:
 
         if station_id == 4:
             active_types = ['active_master']
-            reactive_types = ['reactive_master']
+            reactive_types = ['reactive_master', 'reactive_slave']
         else:
             active_types = ['active', 'active_master']
             reactive_types = ['reactive', 'reactive_master']
@@ -113,13 +141,17 @@ class SyncService:
             for station in stations:
                 logger.info(f"Initial sync for {station.station_code}...")
 
+                real_station_id, real_code = self._resolve_station(station.id, station.station_code)
+                if real_station_id is None:
+                    continue
+
                 power_data = await self.jasper_client.get_station_power_data(
                     station.station_code, start_time, end_time
                 )
 
                 if power_data:
                     records = self._process_and_save(
-                        consumption_repo, station.id, power_data
+                        consumption_repo, real_station_id, power_data
                     )
                     total_records += records
                     logger.info(f"Loaded {records} historical records for {station.station_code}")

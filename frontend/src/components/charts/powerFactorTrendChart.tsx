@@ -27,7 +27,7 @@ const PowerFactorTrendAreaChart: React.FC<Props> = ({ stationId, startDate, endD
         const run = async () => {
             setLoading(true);
             try {
-                const trend = await api.getPowerFactorTrend(stationId, 'active', startDate, endDate, 0.05);
+                const trend = await api.getPowerFactorTrend(stationId, 'all', startDate, endDate, 0.05);
                 setData((trend || []).map((p) => ({
                     date: p.date,
                     powerFactor: Number(p.powerFactor),
