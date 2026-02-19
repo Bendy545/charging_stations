@@ -35,7 +35,6 @@ export interface SessionData {
     start_date: string;
     end_date: string;
     total_kwh: number;
-    start_card: string;
     end_interval_15min: string;
     station_code?: string;
     station_name?: string;

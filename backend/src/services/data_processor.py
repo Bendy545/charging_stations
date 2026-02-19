@@ -34,7 +34,6 @@ def process_sessions_csv(file_path):
                     row['Start Date'],
                     row['End Date'],
                     row['Total kWh'],
-                    row.get('Start Card', ''),
                     row['End_Interval_15min']
                 ))
 
@@ -43,8 +42,8 @@ def process_sessions_csv(file_path):
 
             sql = """
                 INSERT INTO charging_sessions 
-                (station_id, charger_name, start_date, end_date, total_kwh, start_card, end_interval_15min)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (station_id, charger_name, start_date, end_date, total_kwh, end_interval_15min)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
             cursor.executemany(sql, session_records)
             connection.commit()
