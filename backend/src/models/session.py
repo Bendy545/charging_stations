@@ -11,7 +11,6 @@ class ChargingSession:
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     total_kwh: float = 0.0
-    start_card: str = ""
     end_interval_15min: Optional[datetime] = None
     station_code: Optional[str] = None
     station_name: Optional[str] = None
@@ -32,7 +31,6 @@ class ChargingSession:
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'total_kwh': self.total_kwh,
-            'start_card': self.start_card,
             'end_interval_15min': self.end_interval_15min.isoformat() if self.end_interval_15min else None,
             'station_code': self.station_code,
             'station_name': self.station_name,

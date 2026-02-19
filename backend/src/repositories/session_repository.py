@@ -62,8 +62,8 @@ class SessionRepository(BaseRepository):
         query = """
             INSERT INTO charging_sessions 
             (station_id, charger_name, start_date, end_date, 
-             total_kwh, start_card, end_interval_15min)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+             total_kwh, end_interval_15min)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
         values = (
             session.station_id,
@@ -71,7 +71,6 @@ class SessionRepository(BaseRepository):
             session.start_date,
             session.end_date,
             session.total_kwh,
-            session.start_card,
             session.end_interval_15min
         )
         return self.insert(query, values)
@@ -84,12 +83,12 @@ class SessionRepository(BaseRepository):
         query = """
             INSERT INTO charging_sessions 
             (station_id, charger_name, start_date, end_date, 
-             total_kwh, start_card, end_interval_15min)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+             total_kwh, end_interval_15min)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
         values = [
             (s.station_id, s.charger_name, s.start_date, s.end_date,
-             s.total_kwh, s.start_card, s.end_interval_15min)
+             s.total_kwh, s.end_interval_15min)
             for s in sessions
         ]
         return super().bulk_insert(query, values)
@@ -109,7 +108,6 @@ class SessionRepository(BaseRepository):
             start_date=row['start_date'],
             end_date=row['end_date'],
             total_kwh=float(row['total_kwh']),
-            start_card=row.get('start_card', ''),
             end_interval_15min=row.get('end_interval_15min'),
             station_code=row.get('station_code'),
             station_name=row.get('station_name')
